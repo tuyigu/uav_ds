@@ -1,0 +1,31 @@
+# ROS 2 build artifacts
+build/
+install/
+log/
+*/build/
+*/install/
+*/log/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# System
+.DS_Store
+Thumbs.db
+
+# Project specific
+web_backend/venv/
+web_server/node_modules/
+.colcon/

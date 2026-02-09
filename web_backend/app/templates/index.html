@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>UDS 调度面板 - 简易版</title>
+    <!-- Bootstrap 5 CDN -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+      crossorigin="anonymous"
+    />
+    <style>
+      body {
+        padding-top: 1.5rem;
+        padding-bottom: 1.5rem;
+      }
+      .form-section {
+        border-right: 1px solid #eee;
+      }
+      .table-wrapper {
+        max-height: 70vh;
+        overflow-y: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container-fluid">
+      <div class="row mb-3">
+        <div class="col">
+          <h3>UDS 外卖调度面板（原型）</h3>
+          <p class="text-muted mb-0">
+            左侧创建订单 → 自动分配无人机并下发 DeliveryMission；右侧实时查看订单列表。
+          </p>
+        </div>
+      </div>
+
+      <div class="row">
+        <!-- 创建订单表单 -->
+        <div class="col-md-4 form-section mb-3">
+          <h5>创建外卖订单</h5>
+          <form id="order-form">
+            <div class="mb-2">
+              <label class="form-label fw-bold">取货点 (pickup)</label>
+              <div class="row g-2">
+                <div class="col-4">
+                  <input
+                    type="number"
+                    step="0.0001"
+                    class="form-control"
+                    id="pickup-lat"
+                    placeholder="纬度 lat"
+                    required
+                  />
+                </div>
+                <div class="col-4">
+                  <input
+                    type="number"
+                    step="0.0001"
+                    class="form-control"
+                    id="pickup-lon"
+                    placeholder="经度 lon"
+                    required
+                  />
+                </div>
+                <div class="col-4">
+                  <input
+                    type="number"
+                    step="0.1"
+                    class="form-control"
+                    id="pickup-alt"
+                    placeholder="高度 alt"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label fw-bold">送达点 (dropoff)</label>
+              <div class="row g-2">
+                <div class="col-4">
+                  <input
+                    type="number"
+                    step="0.0001"
+                    class="form-control"
+                    id="dropoff-lat"
+                    placeholder="纬度 lat"
+                    required
+                  />
+                </div>
+                <div class="col-4">
+                  <input
+                    type="number"
+                    step="0.0001"
+                    class="form-control"
+                    id="dropoff-lon"
+                    placeholder="经度 lon"
+                    required
+                  />
+                </div>
+                <div class="col-4">
+                  <input
+                    type="number"
+                    step="0.1"
+                    class="form-control"
+                    id="dropoff-alt"
+                    placeholder="高度 alt"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div class="mb-2">
+              <label for="priority" class="form-label fw-bold">优先级</label>
+              <select id="priority" class="form-select">
+                <option value="normal" selected>normal</option>
+                <option value="high">high</option>
+              </select>
+            </div>
+
+            <div class="mb-2">
+              <label for="note" class="form-label fw-bold">备注（可选）</label>
+              <textarea
+                id="note"
+                class="form-control"
+                rows="2"
+                placeholder="例如：屋顶平台，红色桌子附近"
+              ></textarea>
+            </div>
+
+            <button type="submit" class="btn btn-primary mt-2">
+              提交订单
+            </button>
+            <span id="form-status" class="ms-2 text-muted"></span>
+          </form>
+        </div>
+
+        <!-- 订单列表 -->
+        <div class="col-md-8 mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h5 class="mb-0">当前订单列表</h5>
+            <button id="refresh-btn" class="btn btn-outline-secondary btn-sm">
+              手动刷新
+            </button>
+          </div>
+          <div class="table-wrapper">
+            <table class="table table-sm table-hover align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th scope="col">订单ID</th>
+                  <th scope="col">状态</th>
+                  <th scope="col">无人机</th>
+                  <th scope="col">优先级</th>
+                  <th scope="col">Mission ID</th>
+                  <th scope="col">创建时间 (UTC)</th>
+                </tr>
+              </thead>
+              <tbody id="orders-tbody">
+                <!-- JS 动态填充 -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const apiBase = "";
+
+      async function fetchOrders() {
+        try {
+          const resp = await fetch(`${apiBase}/orders/`);
+          if (!resp.ok) {
+            throw new Error("获取订单失败");
+          }
+          const data = await resp.json();
+          renderOrders(data);
+        } catch (err) {
+          console.error(err);
+        }
+      }
+
+      function renderOrders(orders) {
+        const tbody = document.getElementById("orders-tbody");
+        tbody.innerHTML = "";
+        orders.forEach((o) => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td class="text-truncate" style="max-width: 160px;" title="${o.order_id}">${o.order_id}</td>
+            <td>${o.status}</td>
+            <td>${o.assigned_uav_id || "-"}</td>
+            <td>${o.priority}</td>
+            <td class="text-truncate" style="max-width: 160px;" title="${o.mission_id || ""}">
+              ${o.mission_id || "-"}
+            </td>
+            <td>${o.created_at}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+
+      document
+        .getElementById("order-form")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const statusEl = document.getElementById("form-status");
+          statusEl.textContent = "提交中...";
+
+          const payload = {
+            pickup: {
+              lat: parseFloat(document.getElementById("pickup-lat").value),
+              lon: parseFloat(document.getElementById("pickup-lon").value),
+              alt: parseFloat(document.getElementById("pickup-alt").value),
+            },
+            dropoff: {
+              lat: parseFloat(document.getElementById("dropoff-lat").value),
+              lon: parseFloat(document.getElementById("dropoff-lon").value),
+              alt: parseFloat(document.getElementById("dropoff-alt").value),
+            },
+            priority: document.getElementById("priority").value,
+            deadline_ts: null,
+            note: document.getElementById("note").value || null,
+          };
+
+          try {
+            const resp = await fetch(`${apiBase}/orders/`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+            if (!resp.ok) {
+              throw new Error("创建订单失败");
+            }
+            await fetchOrders();
+            statusEl.textContent = "已提交";
+            setTimeout(() => (statusEl.textContent = ""), 1500);
+          } catch (err) {
+            console.error(err);
+            statusEl.textContent = "提交失败";
+          }
+        });
+
+      document
+        .getElementById("refresh-btn")
+        .addEventListener("click", () => fetchOrders());
+
+      // 页面加载后自动拉一次
+      fetchOrders();
+      // 可选：每 5 秒自动刷新一次
+      setInterval(fetchOrders, 5000);
+    </script>
+  </body>
+  </html>
+

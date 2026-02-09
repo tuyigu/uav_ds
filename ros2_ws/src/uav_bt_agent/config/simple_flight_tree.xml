@@ -1,0 +1,9 @@
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <Sequence>
+      <TakeoffAction height="{takeoff_height}" />
+      <MoveToAction x="{target_x}" y="{target_y}" z="{target_z}" yaw="{target_yaw}" />
+      <LandAction />
+    </Sequence>
+  </BehaviorTree>
+</root>

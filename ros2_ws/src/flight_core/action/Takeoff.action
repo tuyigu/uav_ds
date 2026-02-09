@@ -1,0 +1,11 @@
+# Goal: 目标起飞高度 (米)
+float32 height
+---
+# Result
+bool success
+string message
+---
+# Feedback: 当前高度与阶段
+float32 current_z
+string phase
+
