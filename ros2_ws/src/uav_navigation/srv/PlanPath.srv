@@ -1,0 +1,10 @@
+# Request
+geometry_msgs/Point start
+geometry_msgs/Point goal
+float32 safety_margin 0.5    # meters around obstacles
+float32 step_size 0.5        # grid resolution for planning
+---
+# Response
+bool success
+geometry_msgs/Point[] waypoints
+string message

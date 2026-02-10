@@ -7,7 +7,11 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY launch
+install(DIRECTORY launch urdf
   DESTINATION share/${PROJECT_NAME})
+
+install(PROGRAMS nodes/tf_broadcaster.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME px4_tf_broadcaster)
 
 ament_package()

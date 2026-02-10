@@ -29,3 +29,9 @@ Thumbs.db
 web_backend/venv/
 web_server/node_modules/
 .colcon/
+docs/
+
+# External Dependencies (should be installed via script/rosdep)
+ros2_ws/src/BehaviorTree.CPP/
+ros2_ws/src/FAST_LIO_ROS2/
+ros2_ws/tools/

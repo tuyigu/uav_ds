@@ -1,0 +1,40 @@
+octomap_server:
+  ros__parameters:
+    # Resolution in meters per voxel
+    resolution: 0.1
+    
+    # Frame IDs
+    frame_id: map
+    
+    # Sensor model parameters
+    sensor_model:
+      max_range: 50.0  # Maximum range for point cloud processing (meters)
+      
+    # Occupancy thresholds
+    occupancy_min_z: -10.0  # Minimum height to consider (meters)
+    occupancy_max_z: 10.0   # Maximum height to consider (meters)
+    
+    # Point cloud filtering
+    pointcloud_min_z: -10.0
+    pointcloud_max_z: 10.0
+    
+    # Probabilistic updates
+    sensor_model_hit: 0.7      # Probability for a "hit"
+    sensor_model_miss: 0.4     # Probability for a "miss"
+    sensor_model_min: 0.12     # Minimum occupancy probability
+    sensor_model_max: 0.97     # Maximum occupancy probability
+    
+    # Clamping thresholds for occupancy
+    occupancy_thres: 0.5       # Threshold for occupied
+    prob_hit: 0.7
+    prob_miss: 0.4
+    
+    # Filtering
+    filter_ground: false       # Don't filter ground for UAV applications
+    filter_speckles: true      # Remove isolated voxels
+    
+    # Compression
+    compress_map: true         # Compress the octree for efficiency
+    
+    # Incremental 2D projection (for 2D costmap if needed)
+    incremental_2D_projection: false

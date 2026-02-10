@@ -1,0 +1,7 @@
+# Path Planner Configuration
+path_planner:
+  ros__parameters:
+    use_sim_time: true
+    voxel_resolution: 0.5      # meters (match OctoMap resolution)
+    default_safety_margin: 0.5  # meters clearance from obstacles
+    max_planning_iterations: 50000

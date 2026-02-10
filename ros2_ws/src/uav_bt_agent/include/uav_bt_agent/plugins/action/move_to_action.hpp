@@ -1,7 +1,6 @@
 #pragma once
 
-#include <behaviortree_cpp_v3/behavior_tree.h>
-#include <behaviortree_cpp_v3/bt_factory.h>
+#include <behaviortree_cpp/action_node.h>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include "flight_core/action/move_to.hpp"
@@ -15,7 +14,7 @@ public:
   using GoalHandleMoveTo = rclcpp_action::ClientGoalHandle<MoveTo>;
 
   MoveToAction(const std::string& name,
-               const BT::NodeConfiguration& config,
+               const BT::NodeConfig& config,
                const rclcpp::Node::SharedPtr& node);
 
   static BT::PortsList providedPorts();

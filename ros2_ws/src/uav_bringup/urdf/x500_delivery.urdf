@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<robot name="x500_delivery">
+  <link name="base_link">
+    <visual>
+      <geometry>
+        <box size="0.4 0.4 0.1"/>
+      </geometry>
+      <material name="grey">
+        <color rgba="0.5 0.5 0.5 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <link name="lidar_link">
+    <visual>
+      <geometry>
+        <cylinder length="0.05" radius="0.03"/>
+      </geometry>
+      <material name="black">
+        <color rgba="0 0 0 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <link name="camera_down_link">
+    <visual>
+      <geometry>
+        <box size="0.02 0.02 0.02"/>
+      </geometry>
+      <material name="blue">
+        <color rgba="0 0 1 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="lidar_link"/>
+    <origin xyz="0 0 0.1" rpy="0 0 0"/>
+  </joint>
+
+  <joint name="camera_down_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_down_link"/>
+    <origin xyz="0 0 -0.05" rpy="0 1.5708 0"/>
+  </joint>
+</robot>

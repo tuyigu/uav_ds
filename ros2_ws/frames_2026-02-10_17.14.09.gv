@@ -1,0 +1,10 @@
+digraph G {
+"camera_down_link" -> "x500_0/camera_down_link/camera_down_sensor"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"base_link" -> "camera_down_link"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"map" -> "base_link"[label=" Broadcaster: default_authority\nAverage rate: 10.0\nBuffer length: 5.0\nMost recent transform: 42.399779\nOldest transform: 37.399779\n"];
+"base_link" -> "lidar_link"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+edge [style=invis];
+ subgraph cluster_legend { style=bold; color=black; label ="view_frames Result";
+"Recorded at time: 1770714849.8283844"[ shape=plaintext ] ;
+}->"map";
+}

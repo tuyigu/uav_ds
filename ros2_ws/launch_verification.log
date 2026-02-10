@@ -1,0 +1,80 @@
+[INFO] [launch]: All log files can be found below /home/wss/.ros/log/2026-02-10-16-05-49-311336-fedora-71682
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [parameter_bridge-1]: process started with pid [71685]
+[INFO] [robot_state_publisher-2]: process started with pid [71687]
+[INFO] [px4_tf_broadcaster-3]: process started with pid [71689]
+[INFO] [static_transform_publisher-4]: process started with pid [71691]
+[static_transform_publisher-4] [INFO] [1770710749.520684886] [static_transform_publisher_EJKmE4TD2gt6ADBJ]: Spinning until stopped - publishing transform
+[static_transform_publisher-4] translation: ('0.000000', '0.000000', '0.000000')
+[static_transform_publisher-4] rotation: ('0.000000', '0.000000', '0.000000', '1.000000')
+[static_transform_publisher-4] from 'camera_down_link' to 'x500_0/camera_down_link/camera_down_sensor'
+[robot_state_publisher-2] [INFO] [1770710749.571410712] [robot_state_publisher]: got segment base_link
+[robot_state_publisher-2] [INFO] [1770710749.571580941] [robot_state_publisher]: got segment camera_down_link
+[robot_state_publisher-2] [INFO] [1770710749.571599045] [robot_state_publisher]: got segment lidar_link
+[parameter_bridge-1] [INFO] [1770710750.605332052] [ros_gz_bridge]: Creating GZ->ROS Bridge: [/world/urban_delivery/model/x500_0/link/lidar_link/sensor/lidar_3d/scan (gz.msgs.LaserScan) -> /lidar_points (sensor_msgs/msg/LaserScan)] (Lazy 0)
+[parameter_bridge-1] [INFO] [1770710750.610982373] [ros_gz_bridge]: Creating GZ->ROS Bridge: [/world/urban_delivery/model/x500_0/link/lidar_link/sensor/lidar_3d/scan/points (gz.msgs.PointCloudPacked) -> /lidar_points/points (sensor_msgs/msg/PointCloud2)] (Lazy 0)
+[parameter_bridge-1] [INFO] [1770710750.613253844] [ros_gz_bridge]: Creating GZ->ROS Bridge: [/camera_down/image_raw (gz.msgs.Image) -> /camera_down/image_raw (sensor_msgs/msg/Image)] (Lazy 0)
+[parameter_bridge-1] [INFO] [1770710750.615495931] [ros_gz_bridge]: Creating GZ->ROS Bridge: [/camera_down/camera_info (gz.msgs.CameraInfo) -> /camera_down/camera_info (sensor_msgs/msg/CameraInfo)] (Lazy 0)
+[parameter_bridge-1] [INFO] [1770710750.617504288] [ros_gz_bridge]: Creating GZ->ROS Bridge: [/clock (gz.msgs.Clock) -> /clock (rosgraph_msgs/msg/Clock)] (Lazy 0)
+[px4_tf_broadcaster-3] [INFO] [1770710750.714922674] [px4_tf_broadcaster]: PX4 TF Broadcaster started
+[INFO] [aruco_detector-5]: process started with pid [71756]
+[aruco_detector-5] [INFO] [1770710755.966013968] [aruco_detector]: ArUco Detector initialized.
+[aruco_detector-5] [INFO] [1770710755.971973659] [aruco_detector]: Camera Info received.
+[aruco_detector-5] [WARN] [1770710756.214784605] [aruco_detector]: Could not transform pose (even latest): Could not find a connection between 'map' and 'x500_0/camera_down_link/camera_down_sensor' because they are not part of the same tree.Tf has two or more unconnected trees. -> Could not find a connection between 'map' and 'x500_0/camera_down_link/camera_down_sensor' because they are not part of the same tree.Tf has two or more unconnected trees.
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[px4_tf_broadcaster-3] Traceback (most recent call last):
+[px4_tf_broadcaster-3]   File "/home/wss/Dev/Robotics/workspaces/uav_ds/ros2_ws/install/uav_bringup/lib/uav_bringup/px4_tf_broadcaster", line 125, in <module>
+[px4_tf_broadcaster-3]     main()
+[px4_tf_broadcaster-3]   File "/home/wss/Dev/Robotics/workspaces/uav_ds/ros2_ws/install/uav_bringup/lib/uav_bringup/px4_tf_broadcaster", line 120, in main
+[px4_tf_broadcaster-3]     rclpy.spin(node)
+[px4_tf_broadcaster-3]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 229, in spin
+[parameter_bridge-1] [INFO] [1770710762.292210107] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[robot_state_publisher-2] [INFO] [1770710762.292210398] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[aruco_detector-5] Traceback (most recent call last):
+[aruco_detector-5]   File "/home/wss/Dev/Robotics/workspaces/uav_ds/ros2_ws/install/uav_perception/lib/uav_perception/aruco_detector", line 33, in <module>
+[aruco_detector-5]     sys.exit(load_entry_point('uav-perception==0.0.0', 'console_scripts', 'aruco_detector')())
+[aruco_detector-5]   File "/home/wss/Dev/Robotics/workspaces/uav_ds/ros2_ws/install/uav_perception/lib/python3.10/site-packages/uav_perception/aruco_detector.py", line 122, in main
+[aruco_detector-5]     rclpy.spin(node)
+[aruco_detector-5]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 229, in spin
+[aruco_detector-5]     executor.spin_once()
+[aruco_detector-5]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 773, in spin_once
+[aruco_detector-5]     self._spin_once_impl(timeout_sec)
+[aruco_detector-5]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 768, in _spin_once_impl
+[aruco_detector-5]     handler()
+[aruco_detector-5]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/task.py", line 254, in __call__
+[aruco_detector-5]     self._handler.send(None)
+[aruco_detector-5]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 463, in handler
+[aruco_detector-5]     await call_coroutine(entity, arg)
+[aruco_detector-5]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 382, in _execute_subscription
+[aruco_detector-5]     await await_or_execute(sub.callback, msg)
+[aruco_detector-5]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 107, in await_or_execute
+[aruco_detector-5]     return callback(*args)
+[aruco_detector-5]   File "/home/wss/Dev/Robotics/workspaces/uav_ds/ros2_ws/install/uav_perception/lib/python3.10/site-packages/uav_perception/aruco_detector.py", line 99, in image_callback
+[aruco_detector-5]     p_map = self.tf_buffer.transform(p_cam, 'map', timeout=rclpy.duration.Duration(seconds=0.1))
+[aruco_detector-5]   File "/opt/ros/humble/lib/python3.10/site-packages/tf2_ros/buffer_interface.py", line 96, in transform
+[aruco_detector-5]     res = do_transform(object_stamped, self.lookup_transform(target_frame, object_stamped.header.frame_id,
+[aruco_detector-5]   File "/opt/ros/humble/lib/python3.10/site-packages/tf2_ros/buffer.py", line 135, in lookup_transform
+[aruco_detector-5]     self.can_transform(target_frame, source_frame, time, timeout)
+[aruco_detector-5]   File "/opt/ros/humble/lib/python3.10/site-packages/tf2_ros/buffer.py", line 227, in can_transform
+[aruco_detector-5]     sleep(0.02)
+[aruco_detector-5] KeyboardInterrupt
+[static_transform_publisher-4] [INFO] [1770710762.292529887] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[px4_tf_broadcaster-3]     executor.spin_once()
+[px4_tf_broadcaster-3]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 773, in spin_once
+[px4_tf_broadcaster-3]     self._spin_once_impl(timeout_sec)
+[px4_tf_broadcaster-3]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 762, in _spin_once_impl
+[px4_tf_broadcaster-3]     handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
+[px4_tf_broadcaster-3]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 745, in wait_for_ready_callbacks
+[px4_tf_broadcaster-3]     return next(self._cb_iter)
+[px4_tf_broadcaster-3]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 548, in _wait_for_ready_callbacks
+[px4_tf_broadcaster-3]     waitables.extend(filter(self.can_execute, node.waitables))
+[px4_tf_broadcaster-3]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 486, in can_execute
+[px4_tf_broadcaster-3]     return not entity._executor_event and entity.callback_group.can_execute(entity)
+[px4_tf_broadcaster-3]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/callback_groups.py", line 102, in can_execute
+[px4_tf_broadcaster-3]     with self._lock:
+[px4_tf_broadcaster-3] KeyboardInterrupt
+[ERROR] [px4_tf_broadcaster-3]: process has died [pid 71689, exit code -2, cmd '/home/wss/Dev/Robotics/workspaces/uav_ds/ros2_ws/install/uav_bringup/lib/uav_bringup/px4_tf_broadcaster --ros-args --params-file /tmp/launch_params_k2_p3a48'].
+[INFO] [static_transform_publisher-4]: process has finished cleanly [pid 71691]
+[ERROR] [aruco_detector-5]: process has died [pid 71756, exit code -2, cmd '/home/wss/Dev/Robotics/workspaces/uav_ds/ros2_ws/install/uav_perception/lib/uav_perception/aruco_detector --ros-args --params-file /tmp/launch_params_yypd49nv'].
+[INFO] [robot_state_publisher-2]: process has finished cleanly [pid 71687]
+[INFO] [parameter_bridge-1]: process has finished cleanly [pid 71685]

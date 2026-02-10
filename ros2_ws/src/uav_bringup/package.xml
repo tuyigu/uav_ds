@@ -12,7 +12,13 @@
   <exec_depend>flight_core</exec_depend>
   <exec_depend>uav_web_agent</exec_depend>
   <exec_depend>uav_bt_agent</exec_depend>
+  <exec_depend>uav_perception</exec_depend>
   <exec_depend>ros2launch</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>px4_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>rclpy</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

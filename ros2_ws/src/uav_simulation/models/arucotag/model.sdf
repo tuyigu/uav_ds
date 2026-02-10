@@ -1,0 +1,51 @@
+<?xml version="1.0" ?>
+<sdf version="1.9">
+  <model name="arucotag">
+    <static>true</static>
+    <link name="base_link">
+      <visual name="platform_visual">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.8 0.8 1.0</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>0.8 0.8 0.8 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.2 0.2 0.2 1</specular>
+        </material>
+      </visual>
+      <collision name="platform_collision">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.8 0.8 1.0</size>
+          </box>
+        </geometry>
+      </collision>
+      
+      <!-- ArUco Marker Texture (On top of 1m box) -->
+      <visual name="marker_visual">
+        <pose>0 0 0.501 0 0 0</pose> 
+        <geometry>
+          <box>
+            <size>0.5 0.5 0.001</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+          <specular>0.4 0.4 0.4 1</specular>
+          <pbr>
+            <metal>
+              <albedo_map>file:///home/wss/Dev/Robotics/workspaces/uav_ds/ros2_ws/src/uav_simulation/models/arucotag/materials/textures/aruco_marker_0.png</albedo_map>
+              <roughness>0.6</roughness>
+              <metalness>0.1</metalness>
+            </metal>
+          </pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

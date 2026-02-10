@@ -13,10 +13,14 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(px4_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 set(MSG_FILES
   "msg/UavState.msg"
+  "msg/ArucoMarker.msg"
+  "msg/ArucoMarkers.msg"
 )
 
 set(ACTION_FILES
@@ -28,7 +32,7 @@ set(ACTION_FILES
 rosidl_generate_interfaces(${PROJECT_NAME}
   ${MSG_FILES}
   ${ACTION_FILES}
-  DEPENDENCIES builtin_interfaces
+  DEPENDENCIES builtin_interfaces geometry_msgs std_msgs
 )
 
 include_directories(
