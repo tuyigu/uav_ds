@@ -26,12 +26,12 @@
 
 ```mermaid
 graph TD
-    Cloud[Cloud Backend<br>FastAPI + gRPC Client] <-->|HTTP/2 (gRPC)| Edge[Edge Compute<br>Jetson Orin]
-    Cloud <-->|WebRTC Signaling| Video[Video Streamer<br>GStreamer + WebRTC]
+    Cloud["Cloud Backend<br>(FastAPI + gRPC Client)"] <-->|HTTP/2 gRPC| Edge["Edge Compute<br>(Jetson Orin)"]
+    Cloud <-->|WebRTC Signaling| Video["Video Streamer<br>(GStreamer + WebRTC)"]
 
     subgraph EdgeImpl [Edge Implementation]
         Video ~~~ ROS2
-        Bridge[gRPC Bridge Node] <-->|Topics/Actions| Orchestrator[Orchestrator<br>Behavior Tree v4]
+        Bridge["gRPC Bridge Node"] <-->|Topics/Actions| Orchestrator["Orchestrator<br>(Behavior Tree v4)"]
         Orchestrator -->|Control| PX4[Flight Core]
     end
 ```
