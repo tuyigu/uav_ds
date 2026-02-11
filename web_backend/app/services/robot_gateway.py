@@ -1,6 +1,6 @@
 import os
 import roslibpy
-from ..models import DeliveryMission
+from ..models import DeliveryMission, OperatorCommandCreate
 
 class RobotGateway:
     """
@@ -13,20 +13,12 @@ class RobotGateway:
         
         self.client = roslibpy.Ros(host=host, port=port)
         self.topic = None
+        self.command_topic = None
         
         try:
             self.client.run(timeout=2) # 尝试非阻塞连接
             print(f"[RobotGateway] Connected to ROS Bridge at {host}:{port}")
-            
-            # 初始化 Topic 对象
-            self.topic = roslibpy.Topic(self.client, '/web/mission_in', 'uav_web_agent/msg/DeliveryMission')
-            
-            # 订阅任务状态
-            self.status_topic = roslibpy.Topic(self.client, '/web/mission_status', 'uav_web_agent/msg/MissionStatus')
-            self.status_topic.subscribe(self._ros_status_callback)
-            
-            self.external_status_callback = None
-            
+            self._ensure_topics()
         except Exception as e:
             print(f"[RobotGateway] Warning: improved connection handling needed. Error: {e}")
 
@@ -42,18 +34,34 @@ class RobotGateway:
             except Exception as e:
                 print(f"[RobotGateway] Error in status callback: {e}")
 
+    def _ensure_topics(self):
+        """Ensure topics are initialized if client is connected."""
+        if self.client.is_connected:
+            if not self.topic:
+                self.topic = roslibpy.Topic(self.client, '/web/mission_in', 'uav_web_agent/msg/DeliveryMission')
+            
+            if not self.command_topic:
+                self.command_topic = roslibpy.Topic(self.client, '/web/command_in', 'uav_web_agent/msg/OperatorCommand')
+            
+            if not hasattr(self, 'status_topic') or not self.status_topic:
+                self.status_topic = roslibpy.Topic(self.client, '/web/mission_status', 'uav_web_agent/msg/MissionStatus')
+                self.status_topic.subscribe(self._ros_status_callback)
+
     def send_mission(self, mission: DeliveryMission) -> bool:
         if not self.client.is_connected:
-            print(f"[RobotGateway] Error: Not connected to ROS Bridge at {self.client.host}:{self.client.port}")
-            # 尝试重连 (简单策略)
+            print(f"[RobotGateway] Error: Not connected to ROS Bridge")
             try:
-                print("[RobotGateway] Attempting to reconnect...")
-                self.client.run(timeout=1)
+                self.client.run(timeout=2)
             except Exception as e:
                 print(f"[RobotGateway] Reconnect failed: {e}")
                 return False
 
-        # 构造 ROS 消息字典 (扁平化，匹配 DeliveryMission.msg)
+        self._ensure_topics()
+
+        if not self.topic:
+            print("[RobotGateway] Error: Topic not initialized")
+            return False
+
         msg = {
             "mission_id": mission.mission_id,
             "uav_id": mission.uav_id,
@@ -69,13 +77,42 @@ class RobotGateway:
         }
         
         try:
-            print(f"[RobotGateway] Publishing mission {mission.mission_id} to {self.topic.name}...")
             self.topic.publish(roslibpy.Message(msg))
-            print(f"[RobotGateway] Successfully published mission {mission.mission_id}")
+            print(f"[RobotGateway] Published mission {mission.mission_id}")
             return True
         except Exception as e:
             print(f"[RobotGateway] Publish failed: {e}")
             return False
 
+    def send_command(self, cmd: OperatorCommandCreate) -> bool:
+        """Send operator command to Orchestrator via rosbridge."""
+        if not self.client.is_connected:
+            print("[RobotGateway] Error: Not connected to ROS Bridge")
+            try:
+                self.client.run(timeout=1)
+            except Exception:
+                pass # Try anyway
+
+        self._ensure_topics()
+
+        if not self.command_topic:
+            print("[RobotGateway] Error: Command topic not initialized")
+            return False
+
+        msg = {
+            "command": cmd.command,
+            "mission_id": cmd.mission_id,
+            "reason": cmd.reason or "",
+        }
+
+        try:
+            self.command_topic.publish(roslibpy.Message(msg))
+            print(f"[RobotGateway] Published command: {cmd.command} (mission={cmd.mission_id})")
+            return True
+        except Exception as e:
+            print(f"[RobotGateway] Command publish failed: {e}")
+            return False
+
 gateway = RobotGateway()
+
 

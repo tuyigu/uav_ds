@@ -19,6 +19,8 @@ find_package(rosidl_default_generators REQUIRED)
 set(MSG_FILES
   "msg/DeliveryMission.msg"
   "msg/MissionStatus.msg"
+  "msg/MissionIntent.msg"
+  "msg/OperatorCommand.msg"
 )
 
 rosidl_generate_interfaces(${PROJECT_NAME}

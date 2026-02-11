@@ -2,7 +2,7 @@
 
 #include <behaviortree_cpp/action_node.h>
 #include <rclcpp/rclcpp.hpp>
-#include "flight_core/msg/aruco_markers.hpp"
+#include "flight_core/msg/landing_target.hpp"
 
 namespace uav_bt_agent
 {
@@ -18,10 +18,10 @@ public:
     void onHalted() override;
 
 private:
-    void msgCallback(const flight_core::msg::ArucoMarkers::SharedPtr msg);
+    void targetCallback(const flight_core::msg::LandingTarget::SharedPtr msg);
 
     rclcpp::Node::SharedPtr node_;
-    rclcpp::Subscription<flight_core::msg::ArucoMarkers>::SharedPtr sub_;
-    flight_core::msg::ArucoMarkers::SharedPtr last_msg_;
+    rclcpp::Subscription<flight_core::msg::LandingTarget>::SharedPtr sub_;
+    flight_core::msg::LandingTarget::SharedPtr last_target_;
 };
 }

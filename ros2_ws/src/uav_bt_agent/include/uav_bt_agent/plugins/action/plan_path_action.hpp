@@ -19,9 +19,9 @@ public:
     static BT::PortsList providedPorts()
     {
         return {
-            BT::InputPort<double>("goal_x"),
-            BT::InputPort<double>("goal_y"),
-            BT::InputPort<double>("goal_z"),
+            BT::InputPort<float>("goal_x"),
+            BT::InputPort<float>("goal_y"),
+            BT::InputPort<float>("goal_z"),
             BT::OutputPort<std::vector<geometry_msgs::msg::Point>>("waypoints")
         };
     }

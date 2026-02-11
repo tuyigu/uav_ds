@@ -4,6 +4,7 @@
 #include <px4_msgs/msg/trajectory_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
 #include <px4_msgs/msg/vehicle_local_position.hpp>
+#include <px4_msgs/msg/battery_status.hpp>
 #include "types.hpp"
 
 namespace flight_core {
@@ -17,7 +18,7 @@ namespace flight_core {
         // 发送 Offboard 心跳 (告诉 PX4 我们要控什么)
         void publish_heartbeat();
 
-        // 发送轨迹设定点 (核心控制函数)
+        // 发送轨迹设定点 (核心控制函数，输入预期为 ENU)
         void set_trajectory(const Target& target);
 
         // 模式切换命令
@@ -41,6 +42,7 @@ namespace flight_core {
 
         // Subscriptions
         rclcpp::Subscription<px4_msgs::msg::VehicleLocalPosition>::SharedPtr pos_sub_;
+        rclcpp::Subscription<px4_msgs::msg::BatteryStatus>::SharedPtr battery_sub_;
 
         CurrentState current_state_;
     };

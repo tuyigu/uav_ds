@@ -1,114 +1,170 @@
 <root BTCPP_format="4" main_tree_to_execute="MainTree">
 
   <!-- ============================================================ -->
-  <!-- MAIN TREE: Safety + Mission                                   -->
+  <!-- MAIN TREE: Intent-Driven Reactive Architecture               -->
+  <!--                                                              -->
+  <!-- The Orchestrator sends intents via /orchestrator/intent.     -->
+  <!-- The BT reads {intent} from Blackboard and executes.          -->
+  <!-- Safety is checked every tick via ReactiveSequence.            -->
   <!-- ============================================================ -->
   <BehaviorTree ID="MainTree">
     <ReactiveSequence>
 
-      <!-- LAYER 1: Always-on safety (checked every tick) -->
-      <SubTree ID="SafetyMonitor" />
+      <!-- LAYER 1: Self-health (checked every tick) -->
+      <SubTree ID="SelfHealthCheck" />
 
-      <!-- LAYER 2: Mission lifecycle -->
-      <Fallback>
-        <SubTree ID="DeliveryMission" />
+      <!-- LAYER 2: Intent Router (driven by Orchestrator) -->
+      <Switch4 variable="{intent}"
+               case_1="DELIVER"      case_2="HOLD"
+               case_3="ABORT"        case_4="RETURN_HOME">
+
+        <!-- DELIVER: Execute the current mission leg -->
+        <SubTree ID="ExecuteDeliveryLeg" />
+
+        <!-- HOLD: Hover in place -->
+        <SubTree ID="HoverInPlace" />
+
+        <!-- ABORT: Emergency land -->
         <SubTree ID="EmergencyProcedure" />
-      </Fallback>
+
+        <!-- RETURN_HOME: Navigate home and land -->
+        <SubTree ID="ReturnHome" />
+
+        <!-- Default: Idle (no intent) -->
+        <SubTree ID="IdleWait" />
+
+      </Switch4>
 
     </ReactiveSequence>
   </BehaviorTree>
 
   <!-- ============================================================ -->
-  <!-- SAFETY MONITOR (runs every tick, aborts mission on failure)   -->
+  <!-- SELF-HEALTH CHECK (every tick)                                -->
+  <!-- If any check fails → whole ReactiveSequence aborts mission   -->
   <!-- ============================================================ -->
-  <BehaviorTree ID="SafetyMonitor">
-    <Parallel success_count="3" failure_count="1">
+  <BehaviorTree ID="SelfHealthCheck">
+    <Parallel success_count="2" failure_count="1">
       <IsBatteryOk threshold="{battery_min}" />
-      <IsInGeofence />
       <IsSlamHealthy />
     </Parallel>
   </BehaviorTree>
 
   <!-- ============================================================ -->
-  <!-- EMERGENCY PROCEDURE (triggered when safety fails)            -->
+  <!-- EXECUTE DELIVERY LEG                                         -->
+  <!-- 5-Phase Flight: Takeoff → Cruise → Transition → Approach →  -->
+  <!--                 Precision Land                                -->
   <!-- ============================================================ -->
-  <BehaviorTree ID="EmergencyProcedure">
-    <Sequence>
-      <EchoAction message="⚠️ EMERGENCY: Safety check failed!" />
-      <PublishStatusAction status="EMERGENCY" reason="Safety violation" />
-      <Fallback>
-        <ReturnToHomeAction />
-        <EmergencyLandAction />
-      </Fallback>
-    </Sequence>
-  </BehaviorTree>
-
-  <!-- ============================================================ -->
-  <!-- DELIVERY MISSION                                              -->
-  <!-- ============================================================ -->
-  <BehaviorTree ID="DeliveryMission">
+  <BehaviorTree ID="ExecuteDeliveryLeg">
     <Sequence>
 
-      <!-- Wait for mission from cloud dispatch -->
-      <WaitForEvent topic="/uav/mission/new" />
-      <PublishStatusAction status="ACCEPTED" />
-
-      <!-- PHASE 1: Takeoff -->
+      <!-- Phase 1: Takeoff (if not airborne) -->
       <SubTree ID="Phase_Takeoff" />
 
-      <!-- PHASE 2: Navigate to destination -->
-      <SubTree ID="Phase_Navigate"
-               goal_x="{dest_x}" goal_y="{dest_y}" goal_z="{cruise_alt}" />
+      <!-- Phase 2: High-Altitude Cruise (GoTo direct, no A*) -->
+      <SubTree ID="Phase_Cruise"
+               goal_x="{dest_x}" goal_y="{dest_y}" cruise_z="{cruise_alt}" />
 
-      <!-- PHASE 3: Approach + Search + Precision Land -->
-      <SubTree ID="Phase_Deliver" />
+      <!-- Phase 3: Transition Descent (cruise_alt → approach_alt) -->
+      <SubTree ID="Phase_TransitionDescent"
+               goal_x="{dest_x}" goal_y="{dest_y}"
+               from_z="{cruise_alt}" to_z="{approach_alt}" />
 
-      <!-- PHASE 4: Wait for customer pickup -->
-      <WaitAction duration="{pickup_wait_time}" />
+      <!-- Phase 4: A* Planned Approach (approach_alt → search_alt) -->
+      <SubTree ID="Phase_PlannedApproach"
+               goal_x="{dest_x}" goal_y="{dest_y}" goal_z="{search_alt}" />
 
-      <!-- PHASE 5: Return to base -->
-      <SubTree ID="Phase_Takeoff" />
-      <SubTree ID="Phase_Navigate"
-               goal_x="{home_x}" goal_y="{home_y}" goal_z="{cruise_alt}" />
+      <!-- Phase 5: Search + Precision Land (search_alt → ground) -->
+      <SubTree ID="Phase_PrecisionLand" />
 
-      <!-- PHASE 6: Land at base -->
-      <LandAction />
-      <PublishStatusAction status="COMPLETED" />
+      <PublishStatusAction status="SUCCESS" />
 
     </Sequence>
   </BehaviorTree>
 
   <!-- ============================================================ -->
-  <!-- PHASE: TAKEOFF                                                -->
+  <!-- PHASE 1: TAKEOFF                                              -->
+  <!-- Sensors: PX4 internal (IMU + Barometer)                       -->
+  <!-- Navigation: Vertical only                                     -->
   <!-- ============================================================ -->
   <BehaviorTree ID="Phase_Takeoff">
+    <Fallback>
+      <!-- Skip if already airborne -->
+      <ScriptCondition code="phase:='AIRBORNE'; phase == 'AIRBORNE'" />
+      <Sequence>
+        <PublishStatusAction status="TAKING_OFF" />
+        <RetryUntilSuccessful num_attempts="3">
+          <Sequence>
+            <ArmAction />
+            <SetOffboardAction />
+            <TakeoffAction height="{takeoff_height}" />
+          </Sequence>
+        </RetryUntilSuccessful>
+        <PublishStatusAction status="AIRBORNE" />
+      </Sequence>
+    </Fallback>
+  </BehaviorTree>
+
+  <!-- ============================================================ -->
+  <!-- PHASE 2: HIGH-ALTITUDE CRUISE                                 -->
+  <!-- Sensors: GPS primary + SLAM (mapping only, no planning)       -->
+  <!-- Navigation: GoTo direct (no A*) — obstacles rare at altitude  -->
+  <!-- Speed: Maximum                                                -->
+  <!--                                                               -->
+  <!-- SLAM builds OctoMap passively. If OctoMap detects obstacle    -->
+  <!-- in forward path → Fallback to A* replan.                      -->
+  <!-- ============================================================ -->
+  <BehaviorTree ID="Phase_Cruise">
     <Sequence>
-      <RetryNode num_attempts="3">
+      <PublishStatusAction status="CRUISING" />
+
+      <!-- First: climb to cruise altitude above current position -->
+      <GoToAction x="{current_x}" y="{current_y}" z="{cruise_z}" yaw="0" />
+
+      <!-- Then: direct fly to destination at cruise altitude -->
+      <!-- Reactive: if path blocked, replan with A* -->
+      <Fallback>
+        <GoToAction x="{goal_x}" y="{goal_y}" z="{cruise_z}" yaw="0" />
+
+        <!-- Fallback: obstacle detected, use A* at cruise alt -->
         <Sequence>
-          <ArmAction />
-          <SetOffboardAction />
-          <TakeoffAction height="{takeoff_height}" />
+          <EchoAction message="Cruise obstacle detected, switching to A*" />
+          <PlanPathAction
+            goal_x="{goal_x}" goal_y="{goal_y}" goal_z="{cruise_z}"
+            waypoints="{planned_path}" />
+          <FollowPathAction waypoints="{planned_path}" />
         </Sequence>
-      </RetryNode>
-      <PublishStatusAction status="AIRBORNE" />
+      </Fallback>
+
     </Sequence>
   </BehaviorTree>
 
   <!-- ============================================================ -->
-  <!-- PHASE: NAVIGATE (cruise at fixed altitude)                    -->
+  <!-- PHASE 3: TRANSITION DESCENT                                   -->
+  <!-- Sensors: SLAM becomes primary (GPS may drift near buildings)  -->
+  <!-- Navigation: Controlled descent via GoTo                       -->
+  <!-- Speed: Reduced                                                -->
   <!-- ============================================================ -->
-  <BehaviorTree ID="Phase_Navigate">
+  <BehaviorTree ID="Phase_TransitionDescent">
     <Sequence>
-      <PublishStatusAction status="NAVIGATING" />
+      <PublishStatusAction status="DESCENDING" />
+      <GoToAction x="{goal_x}" y="{goal_y}" z="{to_z}" yaw="0" />
+    </Sequence>
+  </BehaviorTree>
 
-      <!-- Plan path using OctoMap 3D A* -->
-      <!-- Input: goal_x/y/z from Blackboard -->
-      <!-- Output: planned_path to Blackboard -->
+  <!-- ============================================================ -->
+  <!-- PHASE 4: A* PLANNED APPROACH                                  -->
+  <!-- Sensors: SLAM primary + OctoMap active avoidance              -->
+  <!-- Navigation: Full A* path planning (low altitude = obstacles)  -->
+  <!-- Speed: Slow                                                   -->
+  <!-- ============================================================ -->
+  <BehaviorTree ID="Phase_PlannedApproach">
+    <Sequence>
+      <PublishStatusAction status="APPROACHING" />
+
       <PlanPathAction
         goal_x="{goal_x}" goal_y="{goal_y}" goal_z="{goal_z}"
         waypoints="{planned_path}" />
 
-      <!-- Follow planned path with obstacle monitoring -->
       <ReactiveSequence>
         <IsPathClear path="{planned_path}" />
         <FollowPathAction waypoints="{planned_path}" />
@@ -118,47 +174,96 @@
   </BehaviorTree>
 
   <!-- ============================================================ -->
-  <!-- PHASE: DELIVER (descend + search + land)                      -->
+  <!-- PHASE 5: SEARCH + PRECISION LAND                              -->
+  <!-- Sensors: Camera primary (YOLO → ArUco handoff)                -->
+  <!--                                                               -->
+  <!-- Step 1: YOLO coarse search from search_alt (~10m)             -->
+  <!-- Step 2: ArUco fine servoing from ~5m to ground                 -->
+  <!-- Fallback: GPS-based blind land if all search fails            -->
   <!-- ============================================================ -->
-  <BehaviorTree ID="Phase_Deliver">
+  <BehaviorTree ID="Phase_PrecisionLand">
     <Sequence>
-      <PublishStatusAction status="APPROACHING" />
+      <PublishStatusAction status="SEARCHING" />
 
-      <!-- Descend to search altitude -->
-      <GoToAction x="{dest_x}" y="{dest_y}" z="{search_alt}" yaw="0" />
-
-      <!-- Search and land -->
       <Fallback>
-
-        <!-- ATTEMPT 1: Full precision landing -->
+        <!-- Primary: Visual precision landing -->
         <Sequence>
-          <!-- Search for max 30 seconds -->
-          <TimeoutNode msec="30000">
-             <!-- Assuming SearchMarkerAction returns SUCCESS if found, RUNNING while searching -->
+          <!-- Search for marker (YOLO coarse → ArUco fine) -->
+          <Timeout msec="30000">
             <SearchMarkerAction marker_id="{target_marker_id}"
                                 marker_x="{marker_x}" marker_y="{marker_y}" />
-          </TimeoutNode>
+          </Timeout>
 
-          <RetryNode num_attempts="3">
+          <!-- Precision land using ArUco visual servoing -->
+          <PublishStatusAction status="LANDING_PRECISION" />
+          <RetryUntilSuccessful num_attempts="3">
             <ReactiveSequence>
               <IsMarkerVisible marker_id="{target_marker_id}" />
               <PrecisionLandAction marker_id="{target_marker_id}" />
             </ReactiveSequence>
-          </RetryNode>
-
-          <PublishStatusAction status="DELIVERED" />
+          </RetryUntilSuccessful>
         </Sequence>
 
-        <!-- ATTEMPT 2: Land at approximate position -->
+        <!-- Fallback: Land at GPS position -->
         <Sequence>
-          <EchoAction message="Marker not found, landing at GPS position" />
+          <EchoAction message="Marker not found, landing at approximate position" />
+          <PublishStatusAction status="LANDING_GPS" />
           <LandAction />
-          <PublishStatusAction status="DELIVERED_APPROX"
-                               reason="Marker not found" />
         </Sequence>
 
       </Fallback>
     </Sequence>
+  </BehaviorTree>
+
+  <!-- ============================================================ -->
+  <!-- HOVER IN PLACE (intent: HOLD)                                 -->
+  <!-- ============================================================ -->
+  <BehaviorTree ID="HoverInPlace">
+    <Sequence>
+      <PublishStatusAction status="HOLDING" reason="Operator or system hold" />
+      <!-- GoTo current position = hover -->
+      <GoToAction x="{current_x}" y="{current_y}" z="{current_z}" yaw="0" />
+    </Sequence>
+  </BehaviorTree>
+
+  <!-- ============================================================ -->
+  <!-- RETURN HOME                                                   -->
+  <!-- Uses same 5-phase logic but target = home                     -->
+  <!-- ============================================================ -->
+  <BehaviorTree ID="ReturnHome">
+    <Sequence>
+      <PublishStatusAction status="RETURNING" />
+
+      <!-- Climb to cruise altitude -->
+      <SubTree ID="Phase_Cruise"
+               goal_x="{home_x}" goal_y="{home_y}" cruise_z="{cruise_alt}" />
+
+      <!-- Simple land at home (known location, no search needed) -->
+      <GoToAction x="{home_x}" y="{home_y}" z="{search_alt}" yaw="0" />
+      <LandAction />
+      <PublishStatusAction status="SUCCESS" reason="Returned home" />
+    </Sequence>
+  </BehaviorTree>
+
+  <!-- ============================================================ -->
+  <!-- EMERGENCY PROCEDURE (intent: ABORT)                           -->
+  <!-- ============================================================ -->
+  <BehaviorTree ID="EmergencyProcedure">
+    <Sequence>
+      <EchoAction message="⚠️ EMERGENCY: Aborting mission!" />
+      <PublishStatusAction status="ABORTING" reason="Emergency abort" />
+      <Fallback>
+        <ReturnToHomeAction />
+        <EmergencyLandAction />
+      </Fallback>
+    </Sequence>
+  </BehaviorTree>
+
+  <!-- ============================================================ -->
+  <!-- IDLE WAIT (no active intent)                                  -->
+  <!-- ============================================================ -->
+  <BehaviorTree ID="IdleWait">
+    <EchoAction message="Idle: waiting for intent..." />
   </BehaviorTree>
 
 </root>

@@ -25,6 +25,8 @@ setup(
     entry_points={
         'console_scripts': [
             'aruco_detector = uav_perception.aruco_detector:main',
+            'yolo_detector = uav_perception.yolo_detector:main',
+            'marker_fuser = uav_perception.marker_fuser:main',
         ],
     },
 )

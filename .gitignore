@@ -35,3 +35,26 @@ docs/
 ros2_ws/src/BehaviorTree.CPP/
 ros2_ws/src/FAST_LIO_ROS2/
 ros2_ws/tools/
+
+# --- Added by Assistant ---
+# ROS 2 / Rosbag
+*.bag
+*.mcap
+*.db3
+perf.data
+perf.data.old
+
+# C++ / Compilation
+compile_commands.json
+.clang-format.swp
+
+# Web Keys & Logs
+.env.local
+.env.*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / Temporary
+*~
+#*#

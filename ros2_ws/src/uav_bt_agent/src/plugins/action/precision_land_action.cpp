@@ -43,7 +43,17 @@ BT::NodeStatus PrecisionLandAction::onRunning()
 
     // Check if we found the marker recently
     if (!last_msg_) {
-        // No data yet, wait (or fail if too long, handled by Timeout decorator)
+        // No data yet, wait
+        return BT::NodeStatus::RUNNING;
+    }
+
+    // Check staleness (1.0 second limit for precision land)
+    auto now = node_->get_clock()->now();
+    auto msg_time = rclcpp::Time(last_msg_->header.stamp);
+    if ((now - msg_time).seconds() > 1.0) {
+        RCLCPP_WARN(node_->get_logger(), "PrecisionLand: Detection data is stale (%.1fs), ignoring",
+                    (now - msg_time).seconds());
+        last_msg_ = nullptr;
         return BT::NodeStatus::RUNNING;
     }
 

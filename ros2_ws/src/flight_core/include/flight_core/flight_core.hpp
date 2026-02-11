@@ -90,6 +90,9 @@ private:
 
     // 飞行阶段转字符串（给消息和反馈用）
     std::string phase_to_string(FlightPhase phase) const;
+
+    // --- 当前活跃的 Action 句柄 (用于抢占/Preemption) ---
+    std::shared_ptr<GoalHandleMoveTo> current_move_goal_handle_;
 };
 
 } // namespace flight_core

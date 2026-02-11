@@ -50,3 +50,11 @@ class DeliveryMission(BaseModel):
     deadline_ts: Optional[int] = None
     note: Optional[str] = None
 
+
+class OperatorCommandCreate(BaseModel):
+    """Web 前端发送的操作指令。"""
+    command: str = Field(..., description="PAUSE / RESUME / CANCEL / CONFIRM_LOADED / CONFIRM_DELIVERED")
+    mission_id: str = Field(..., description="目标任务 ID")
+    reason: Optional[str] = Field("", description="可选原因说明")
+
+

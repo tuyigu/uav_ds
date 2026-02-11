@@ -1,84 +1,117 @@
 # UDS: 工业级城市无人机配送系统 (UAV Delivery System)
 
-## 🚀 项目愿景
-UDS 是一个集成了 **ROS 2 机器人控制**、**行为树决策逻辑**、**Web 集群调度**与 **WebRTC 远程监控**的端到端无人机配送解决方案。本项目旨在解决城市复杂环境下的“末端 100 米”配送难题，通过高可靠的软件架构，将先进的算法（VLN, SLAM, YOLO）转化为可落地的工业级产品。
+![ROS 2 Humble](https://img.shields.io/badge/ROS_2-Humble-22314E?style=for-the-badge&logo=ros&logoColor=white)
+![BehaviorTree.CPP](https://img.shields.io/badge/BehaviorTree.CPP-v4-00599C?style=for-the-badge&logo=c%2B%2B&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.95+-009688?style=for-the-badge&logo=fastapi&logoColor=white)
+![gRPC Planned](https://img.shields.io/badge/Architecture-gRPC_Pending-FF6F00?style=for-the-badge&logo=grpc&logoColor=white)
+
+**UDS (UAV Delivery System)** 是一个旨在解决城市物流“末端 100 米”难题的**工业级无人机配送解决方案**。
+
+本项目不仅仅是一个 ROS 2 Demo，它是对**云-边-端**协同架构的一次深度实践。系统采用**“慢决策、快执行”**的分层设计，利用最新的 **BehaviorTree.CPP v4** 构建高鲁棒性的决策大脑，能够在 GPS 拒止、通信断连等极端环境下保障飞行安全。
+
+> *“在工业界，一个能稳定运行 1 万次不炸机的简单系统，价值远高于一个不可控的复杂演示。”*
 
 ---
 
-## 🏗️ 系统架构设计 (Architecture)
+## 🏗️ 核心架构与演进 (Architecture Evolution)
 
-系统采用 **“慢决策、快执行、高观测”** 的解耦设计，确保在异构系统环境下的极致鲁棒性。
+为了实现真正的工业级可靠性，项目架构正在经历从 V1.0 (原型) 到 V2.0 (生产级) 的演变。
 
-### 1. 云端调度层 (Cloud Fleet Management) - *FastAPI / React*
-*   **集中式调度**：从“无人机主动接单”升级为“云端最优匹配”。基于无人机实时位置、电池电量及任务优先级进行全局分配。
-*   **数字孪生监控**：实时同步无人机坐标与任务状态，提供可视化看板。
-*   **指令兜底**：具备最高优先级的远程干预接口，可一键执行紧急悬停或返航。
+### V1.0: 原型验证 (Current)
+*   **通信**: 基于 `rosbridge` (WebSocket) 进行 JSON 消息转发。
+*   **优劣**: 开发迅速，但 JSON 解析开销大，且 ROS 2 节点崩溃会影响视频流。
 
-### 2. 逻辑决策层 (Logic Hub) - *BehaviorTree.CPP*
-*   **行为树编排**：利用行为树（BT）取代传统状态机，优雅处理任务打断、异常回退（Fallback）与并行监控。
-*   **任务原子化**：将复杂的配送过程拆解为 `Takeoff`、`Navigate`、`Search_Marker`、`Precision_Landing` 等原子行为。
+### V2.0: 工业级重构 (Architecture Roadmap)
+为了彻底解耦业务逻辑与实时控制，我们正在推进以下架构升级：
 
-### 3. 感知与定位层 (Perception & Localization)
-*   **多级定位接力**：
-    *   **干线阶段**：GPS + 3D Lidar SLAM 融合定位。
-    *   **末端阶段**：自动切换至局部坐标系，利用 **ArUco 码** 或 **YOLO** 进行视觉伺服对准，解决 GPS 漂移。
-*   **障碍物监控**：独立的避障节点，基于雷达/深度相机数据为行为树提供 `SafetyStatus`。
+```mermaid
+graph TD
+    Cloud[Cloud Backend<br>FastAPI + gRPC Client] <-->|HTTP/2 (gRPC)| Edge[Edge Compute<br>Jetson Orin]
+    Cloud <-->|WebRTC Signaling| Video[Video Streamer<br>GStreamer + WebRTC]
 
-### 4. 高稳执行层 (Execution Layer) - *Flight Core & PX4*
-*   **影子目标控制 (Shadow Target)**：采用轨迹插值算法，避免控制指令突变带来的机体抖动。
-*   **Action 化接口**：将所有持续性物理过程（起飞、平移、降落）封装为 ROS 2 Action，解决异步调用中的状态冲突。
+    subgraph EdgeImpl [Edge Implementation]
+        Video ~~~ ROS2
+        Bridge[gRPC Bridge Node] <-->|Topics/Actions| Orchestrator[Orchestrator<br>Behavior Tree v4]
+        Orchestrator -->|Control| PX4[Flight Core]
+    end
+```
 
-### 5. 并列观测层 (Parallel Monitoring) - *WebRTC*
-*   **独立视频流**：视频传输程序独立于 ROS 2 运行，直接调用硬件编码器，确保在系统高载荷下仍有 <200ms 的监控延迟。
-*   **远程临场 (Telepresence)**：支持 Web 端通过 DataChannel 直接接管底层控制，实现人在回路（Human-in-the-loop）的应急保障。
-
----
-
-## 🛠️ 技术栈 (Tech Stack)
-
-| 维度 | 技术选型 |
-| :--- | :--- |
-| **机器人框架** | ROS 2 (Humble / Foxy) |
-| **飞控底层** | PX4 Autopilot + MAVROS/PX4-ROS2-Bridge |
-| **决策逻辑** | BehaviorTree.CPP v4 / Groot |
-| **感知算法** | YOLOv8 (目标识别), Fast-LIO/LeGO-LOAM (SLAM) |
-| **后端开发** | Python FastAPI + WebSocket + PostgreSQL |
-| **实时流媒体** | WebRTC (aiortc / GStreamer) |
-| **仿真环境** | Gazebo / Ignition + PX4 SITL |
+1.  **通信层 (Communication)**: 迁移至 **gRPC (Protobuf)**。
+    *   **目的**: 强类型接口定义，毫秒级指令下发，显著降低 CPU 占用。
+    *   **实现**: `uav_grpc_bridge` 节点作为 ROS 2 与外部世界的唯一“外交官”。
+2.  **视频层 (Video Streaming)**: 采用 **WebRTC (GStreamer)** 独立进程。
+    *   **目的**: 绕过 ROS 2 消息序列化，直接利用硬件编码器，实现 <200ms 的“玻璃到玻璃”超低延迟。
+    *   **优势**: 即使 ROS 2 核心崩溃，后台仍能看到实时画面并触发底层硬件复位。
+3.  **控制层 (Backend)**: Python (FastAPI) 仅负责非实时的订单调度与状态监控，不介入实时飞行回路。
 
 ---
 
-## 🎯 核心特性与亮点
+## 🧠 决策即核心 (Behavior Tree as the Brain)
 
-### 1. 应对“末端 100 米”的鲁棒设计
-在进入城市走廊后的末端下降区间，系统自动降低对 GPS 的依赖，通过**局部坐标系动态锚定**技术，将视觉反馈引入控制闭环，确保在“城市峡谷”环境下的精准触达。
+这是本项目最核心的**重头戏**。我们没有使用简单的状态机，而是采用了 **Behavior Tree (BT) v4** 来构建无人机的“大脑”。
 
-### 2. 为“失败”而设计
-*   **多层级容错**：行为树内置 `Sequence-Fallback` 逻辑。识别丢失时自动进入惯性推算，严重异常时自动切换至人工 WebRTC 接管模式。
-*   **状态透明化**：所有逻辑节点状态实时上报，实现故障的秒级定位。
-
-### 3. 异步架构优化
-针对大模型（VLN/LLM）推理慢、飞控响应要求快的矛盾，设计了异步意图下发机制。大模型仅负责更新“中间目标点”，行为树负责维护“飞行状态”，`FlightCore` 负责“高频执行”。
-
----
-
-## 📅 开发计划 (Roadmap)
-- [x] 基于 **Shadow Target** 的改良版 Flight Core 开发。
-- [x] 基于 **FastAPI** 的集群调度原型构建。
-- [ ] **BehaviorTree** 核心节点（Takeoff/Move/Land）封装。
-- [ ] 集成 **ArUco/YOLO** 辅助降落系统。
-- [ ] 接入 **WebRTC** 独立视频流传输链路。
-- [ ] 接入 **VLN (Vision-Language Navigation)** 模型，实现语义指令解析。
+*   **响应式序列 (ReactiveSequence)**: 支持**动态抢占**。例如，用户在 Web 端点击“暂停”，行为树会立即中断当前的 `MoveTo` 动作，切换至 `Hover` 状态，无需等待当前动作完成。
+*   **多层级熔断 (Multi-Level Failsafe)**:
+    *   Level 1 (轻微): GPS 精度下降 -> 切换至 Lidar Odometry 导航。
+    *   Level 2 (中等): 电池 < 20% -> 放弃任务，执行 `ReturnToHome`。
+    *   Level 3 (严重): 视觉丢失 -> 原地执行 `EmergencyLand`。
+*   **可视化调试**: 集成 **Groot2** (Port 1667)，在研发过程中可以实时看到决策逻辑的跳转。
 
 ---
 
-## 👨‍💻 岗位适配度
-本项目涵盖了机器人开发的完整生命周期，特别适配以下岗位：
-*   **机器人系统架构师**：异构系统集成、通信协议设计、故障隔离机制。
-*   **决策规划工程师**：基于行为树的复杂任务决策、多级导航模式切换。
-*   **无人机系统工程师**：PX4 深度定制、低空经济业务逻辑落地。
-*   **机器人平台开发**：Web-to-Robot 调度链路、实时流媒体监控。
+## 🛠️ 当前状态 (Current Status)
+
+| 模块 | 进度 | 说明 |
+| :--- | :--- | :--- |
+| **仿真环境** | ✅ Ready | Gazebo Garden + PX4 SITL 闭环验证。 |
+| **飞行控制** | ✅ Ready | 基于 FSM 的底层封装，轨迹平滑。 |
+| **行为树** | 🟡 **Active** | 基础逻辑已通。**正在攻坚复杂故障恢复与断点续飞逻辑。** |
+| **Web 后端** | 🟡 Prototype | 订单 API 可用，正准备迁移至 gRPC。 |
+| **感知定位** | 🟡 Optimizing | FAST-LIO 建图正常，ArUco 降落正在优化光照鲁棒性。 |
 
 ---
 
-> *“在工业界，一个能稳定运行1万次不炸机的简单系统，价值远高于一个不可控的演示 Demo。”*
+## ⚡ 快速开始 (Quick Start)
+
+### 1. 环境准备
+*   Ubuntu 22.04 + ROS 2 Humble
+*   PX4 Autopilot Toolchain
+
+### 2. 编译
+```bash
+# 1. 克隆代码
+git clone <repo_url> uav_ds
+cd uav_ds
+./ros2_ws/setup_dependencies.sh
+
+# 2. 编译 ROS 2 包
+cd ros2_ws
+colcon build --symlink-install --packages-select uav_bt_agent uav_navigation flight_core uav_perception uav_simulation uav_slam uav_bringup
+source install/setup.zsh
+```
+
+### 3. 运行仿真
+启动全套系统（Gazebo, ROS 2, BT Agent, Bridge）：
+```bash
+ros2 launch uav_bringup uav_system.launch.py
+```
+
+### 4. 可视化
+*   **逻辑**: 运行 `Groot2` 连接 `localhost:1667`。
+*   **视觉**: `rviz2 -d ros2_ws/src/uav_bringup/config/default.rviz`。
+
+---
+
+## 📅 未来路线图 (Roadmap)
+
+我们正在迈向 **V2.0 架构**：
+
+- [ ] **Phase 1: 行为树深度进化**
+    - [ ] 实现 `BatteryFailsafe` (智能返航/就地降落决策)。
+    - [ ] 实现 `LinkLoss` (通信断连保护)。
+- [ ] **Phase 2: 架构升级 (gRPC + WebRTC)**
+    - [ ] 定义 `.proto` 接口文件。
+    - [ ] 开发 `uav_grpc_bridge` 节点。
+    - [ ] 集成 GStreamer WebRTC 客户端。
+- [ ] **Phase 3: 多机协同**
+    - [ ] 基于 gRPC 的多机调度算法。

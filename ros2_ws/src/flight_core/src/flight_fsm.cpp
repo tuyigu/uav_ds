@@ -23,10 +23,10 @@ static double dist_sq_xy(const Target& a, const Target& b) {
 bool FlightFSM::trigger_takeoff(double height, double current_x, double current_y) {
     if (phase_ != FlightPhase::IDLE) return false;
 
-    // 起飞时，目标设为当前位置的正上方
+    // 起飞时，目标设为当前位置的正上方 (ENU 高度为正)
     goal_target_.x = current_x;
     goal_target_.y = current_y;
-    goal_target_.z = -std::abs(height);
+    goal_target_.z = std::abs(height);
     goal_target_.yaw = std::numeric_limits<double>::quiet_NaN();
 
     // 影子目标直接跟上
@@ -56,10 +56,10 @@ bool FlightFSM::trigger_move(double x, double y, double z, double yaw) {
         return false;
     }
 
-    // 设置终点
+    // 设置终点 (ENU)
     goal_target_.x = x;
     goal_target_.y = y;
-    goal_target_.z = -std::abs(z);
+    goal_target_.z = z;
     goal_target_.yaw = yaw;
 
     // 不重置 track_target_，保证轨迹连续

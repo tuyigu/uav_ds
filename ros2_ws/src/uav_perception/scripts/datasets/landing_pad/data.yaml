@@ -1,0 +1,14 @@
+names:
+- armor
+- robot
+nc: 2
+path: /home/wss/Dev/Robotics/workspaces/uav_ds/ros2_ws/src/uav_perception/scripts/datasets/landing_pad
+roboflow:
+  license: CC BY 4.0
+  project: aruco-8finj
+  url: https://universe.roboflow.com/keito-kohinata/aruco-8finj/dataset/1
+  version: 1
+  workspace: keito-kohinata
+test: test/images
+train: train/images
+val: valid/images

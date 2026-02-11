@@ -7,7 +7,7 @@ BT::NodeStatus PlanPathAction::onStart()
         return BT::NodeStatus::FAILURE;
     }
 
-    double goal_x, goal_y, goal_z;
+    float goal_x, goal_y, goal_z;
     if (!getInput("goal_x", goal_x) ||
         !getInput("goal_y", goal_y) ||
         !getInput("goal_z", goal_z)) {
@@ -16,9 +16,9 @@ BT::NodeStatus PlanPathAction::onStart()
     }
 
     auto request = std::make_shared<uav_navigation::srv::PlanPath::Request>();
-    request->goal.x = goal_x;
-    request->goal.y = goal_y;
-    request->goal.z = goal_z;
+    request->goal.x = (double)goal_x;
+    request->goal.y = (double)goal_y;
+    request->goal.z = (double)goal_z;
     // Start position will be handled by the service (using current odometry) if we leave it 0 or pass current pos.
     // Ideally we should pass current pos here, but for now relying on service's odometry sub is easier.
 

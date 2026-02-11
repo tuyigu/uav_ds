@@ -21,6 +21,9 @@ set(MSG_FILES
   "msg/UavState.msg"
   "msg/ArucoMarker.msg"
   "msg/ArucoMarkers.msg"
+  "msg/YoloDetection.msg"
+  "msg/YoloDetections.msg"
+  "msg/LandingTarget.msg"
 )
 
 set(ACTION_FILES

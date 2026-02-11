@@ -48,7 +48,8 @@ class ArucoDetector(Node):
         
         # Aruco setup
         self.aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_50)
-        self.aruco_params = aruco.DetectorParameters_create()
+        self.aruco_params = aruco.DetectorParameters()
+        self.detector = aruco.ArucoDetector(self.aruco_dict, self.aruco_params)
         
         self.get_logger().info('ArUco Detector initialized.')
 
@@ -71,7 +72,7 @@ class ArucoDetector(Node):
             return
             
         gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
-        corners, ids, rejected = aruco.detectMarkers(gray, self.aruco_dict, parameters=self.aruco_params)
+        corners, ids, rejected = self.detector.detectMarkers(gray)
         
         # Prepare output messages
         aruco_msg = ArucoMarkers()

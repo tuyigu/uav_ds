@@ -11,7 +11,7 @@
 #include "uav_bt_agent/plugins/action/search_marker_action.hpp"
 #include "uav_bt_agent/plugins/action/precision_land_action.hpp"
 
-#include "uav_web_agent/msg/delivery_mission.hpp"
+#include "uav_web_agent/msg/mission_intent.hpp"
 #include "uav_web_agent/msg/mission_status.hpp"
 #include "flight_core/msg/uav_state.hpp"
 
@@ -23,12 +23,13 @@ public:
     UAVBtAgent() : Node("uav_bt_agent")
     {
         // 1. Initialize ROS interfaces
-        mission_sub_ = this->create_subscription<uav_web_agent::msg::DeliveryMission>(
-            "/uav/mission/new", 10,
-            std::bind(&UAVBtAgent::missionCallback, this, std::placeholders::_1));
+        // Subscribe to Orchestrator intents (not missions directly)
+        intent_sub_ = this->create_subscription<uav_web_agent::msg::MissionIntent>(
+            "/orchestrator/intent", 10,
+            std::bind(&UAVBtAgent::intentCallback, this, std::placeholders::_1));
 
         status_pub_ = this->create_publisher<uav_web_agent::msg::MissionStatus>(
-            "/bt/mission_status", 10);
+            "/bt/execution_status", 10);
             
         battery_sub_ = this->create_subscription<flight_core::msg::UavState>(
             "/flight/uav_state", 10,
@@ -36,9 +37,12 @@ public:
                 last_state_ = msg;
             });
 
+    }
+
+    void init()
+    {
         // 2. Register Plugins
         // Note: We use registerBuilder below to inject ROS node dependency.
-        // registerNodeType is removed to avoid static assertion errors about constructor signature.
 
         // 3. Register Simple Actions/Conditions (Lambdas)
         
@@ -62,42 +66,36 @@ public:
                 return BT::NodeStatus::SUCCESS;
             }
             return BT::NodeStatus::FAILURE;
-        });
+        }, {BT::InputPort<std::string>("status"), BT::InputPort<std::string>("reason")});
         
         factory_.registerSimpleAction("EchoAction", [&](BT::TreeNode& node) {
             auto msg = node.getInput<std::string>("message");
             if (msg) RCLCPP_INFO(this->get_logger(), "Echo: %s", msg.value().c_str());
             return BT::NodeStatus::SUCCESS;
-        });
+        }, {BT::InputPort<std::string>("message")});
 
         // Conditions
         factory_.registerSimpleCondition("IsBatteryOk", [&](BT::TreeNode& node) {
-            if (!last_state_) return BT::NodeStatus::SUCCESS; // Assume OK if no data
             auto threshold = node.getInput<float>("threshold");
-            // Check voltage or percentage. UavState has battery_remaining (0-1)
-            // if (last_state_->battery_remaining < threshold.value_or(0.2)) return BT::NodeStatus::FAILURE;
-            return BT::NodeStatus::SUCCESS; 
-        });
+            if (!last_state_ || !threshold) return BT::NodeStatus::SUCCESS;
+            return (last_state_->battery > threshold.value()) ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
+        }, {BT::InputPort<float>("threshold")});
         
         factory_.registerSimpleCondition("IsInGeofence", [&](BT::TreeNode&) {
-            // Check bounds
             return BT::NodeStatus::SUCCESS; 
         });
 
         factory_.registerSimpleCondition("IsSlamHealthy", [&](BT::TreeNode&) {
-            // Check SLAM status/latency
             return BT::NodeStatus::SUCCESS; 
         });
         
         factory_.registerSimpleCondition("IsMarkerVisible", [&](BT::TreeNode&) {
-            // Logic would need access to last marker time. SearchMarkerAction handles this during search.
-            // This is just a check.
             return BT::NodeStatus::SUCCESS; 
-        });
+        }, {BT::InputPort<int>("marker_id")});
         
         factory_.registerSimpleCondition("IsPathClear", [&](BT::TreeNode&) {
             return BT::NodeStatus::SUCCESS; 
-        });
+        }, {BT::InputPort<std::vector<geometry_msgs::msg::Point>>("path")});
         
         factory_.registerSimpleAction("ReturnToHomeAction", [&](BT::TreeNode&) {
             RCLCPP_WARN(this->get_logger(), "Returning to home...");
@@ -121,11 +119,6 @@ public:
 
         try {
             // Pass 'this' node to plugins via blackboard or register args
-            // In v4, we can register a builder that captures 'this'.
-            // The method registerNodeType<T> expects T to have specific constructor.
-            // My plugins expect (name, config, node_ptr).
-            // So I need to specificy the builder explicitly.
-             
             auto node_ptr = shared_from_this();
             
             // Re-register with explicit builder for my custom plugins
@@ -160,6 +153,23 @@ public:
 
             tree_ = factory_.createTreeFromFile(xml_path);
             
+            // Set blackboard defaults for 5-phase flight dynamics
+            auto bb = tree_.rootBlackboard();
+            bb->set("intent", std::string(""));  // No intent until Orchestrator sends one
+            bb->set("phase", std::string("IDLE"));
+            bb->set("should_hold", false);
+            bb->set("should_abort", false);
+            
+            bb->set("cruise_alt", 30.0f);
+            bb->set("approach_alt", 15.0f);
+            bb->set("search_alt", 5.0f);
+            bb->set("takeoff_height", 5.0f);
+            
+            bb->set("home_x", 0.0f);
+            bb->set("home_y", 0.0f);
+            
+            bb->set("battery_min", 0.15f);
+            
             // Groot2 Publisher
             groot_publisher_ = std::make_unique<BT::Groot2Publisher>(tree_);
             RCLCPP_INFO(this->get_logger(), "Groot2 Publisher started on port 1667");
@@ -171,40 +181,72 @@ public:
 
     void update()
     {
+        // Inject real-time state into Blackboard
+        if (last_state_) {
+            auto bb = tree_.rootBlackboard();
+            bb->set("current_x", last_state_->x);
+            bb->set("current_y", last_state_->y);
+            bb->set("current_z", last_state_->z);
+            bb->set("battery", last_state_->battery);
+        }
+
         if (is_running_) {
-            BT::NodeStatus status = tree_.tickExactlyOnce(); // v4 API for reactive trees
-            // or tickOnce();
+            BT::NodeStatus status = tree_.tickExactlyOnce();
             
-            if (status == BT::NodeStatus::SUCCESS || status == BT::NodeStatus::FAILURE) {
-                RCLCPP_INFO(this->get_logger(), "Tree finished with %s", toStr(status).c_str());
+            if (status == BT::NodeStatus::SUCCESS) {
+                RCLCPP_INFO(this->get_logger(), "Tree finished: SUCCESS");
+                publishStatus("SUCCESS", current_intent_);
+                is_running_ = false;
+            } else if (status == BT::NodeStatus::FAILURE) {
+                RCLCPP_WARN(this->get_logger(), "Tree finished: FAILURE");
+                publishStatus("FAILED", "BT execution failed");
                 is_running_ = false;
             }
+            // RUNNING → continue next tick
         }
     }
 
-    void missionCallback(const uav_web_agent::msg::DeliveryMission::SharedPtr msg)
+    void intentCallback(const uav_web_agent::msg::MissionIntent::SharedPtr msg)
     {
-        if (is_running_) {
-            RCLCPP_WARN(this->get_logger(), "Busy, ignoring mission");
-            return;
-        }
+        RCLCPP_INFO(this->get_logger(), "Received intent: %s (phase=%s, reason=%s)",
+                    msg->intent.c_str(), msg->phase.c_str(), msg->reason.c_str());
         
-        RCLCPP_INFO(this->get_logger(), "Received mission %s", msg->mission_id.c_str());
-        
-        // Set Blackboard Variables
         auto blackboard = tree_.rootBlackboard();
-        blackboard->set("dest_x", msg->dropoff_lat); // Hack mapping
-        blackboard->set("dest_y", msg->dropoff_lon); // Hack mapping
-        blackboard->set("takeoff_height", 5.0);
-        blackboard->set("cruise_alt", 5.0);
-        blackboard->set("search_alt", 3.0);
-        blackboard->set("pickup_wait_time", 5000); // ms
-        blackboard->set("home_x", 0.0);
-        blackboard->set("home_y", 0.0);
-        blackboard->set("target_marker_id", 0); // Default or from mission?
+        
+        // Map intent to blackboard
+        // Note: Cast to float because BT ports (MoveTo) expect float, but ROS msg is float64 (double)
+        std::string intent_str = msg->intent;
+        if (intent_str == "REROUTE") {
+            intent_str = "DELIVER";
+        }
+        blackboard->set("intent", intent_str);
+        blackboard->set("phase", msg->phase);
+        blackboard->set("dest_x", (float)msg->target_x);
+        blackboard->set("dest_y", (float)msg->target_y);
+        blackboard->set("dest_z", (float)msg->target_z);
+        blackboard->set("target_marker_id", msg->target_marker_id);
         
         current_mission_id_ = msg->mission_id;
-        is_running_ = true;
+        
+        // Intent-based behavior
+        if (msg->intent == "DELIVER" || msg->intent == "RETURN_HOME" || msg->intent == "REROUTE") {
+            current_intent_ = msg->intent;
+            if (!is_running_) {
+                is_running_ = true;
+                publishStatus("RUNNING", msg->intent);
+            }
+            // If already running, BT will pick up new blackboard values on next tick
+        } else if (msg->intent == "HOLD") {
+            // Set hold flag → BT should react and hover
+            blackboard->set("should_hold", true);
+            publishStatus("HOLDING", msg->reason);
+        } else if (msg->intent == "ABORT") {
+            blackboard->set("should_abort", true);
+            publishStatus("ABORTING", msg->reason);
+        } else if (msg->intent == "WAIT_CONFIRM") {
+            blackboard->set("should_hold", true);
+            publishStatus("WAITING", msg->reason);
+        }
     }
     
     void publishStatus(const std::string& status, const std::string& reason)
@@ -213,6 +255,9 @@ public:
         msg.mission_id = current_mission_id_;
         msg.status = status;
         msg.reason = reason;
+        msg.progress = 0.0f;
+        msg.user_facing_msg = "";
+        msg.eta_seconds = 0;
         status_pub_->publish(msg);
     }
 
@@ -223,8 +268,9 @@ private:
     
     bool is_running_ = false;
     std::string current_mission_id_;
+    std::string current_intent_;
     
-    rclcpp::Subscription<uav_web_agent::msg::DeliveryMission>::SharedPtr mission_sub_;
+    rclcpp::Subscription<uav_web_agent::msg::MissionIntent>::SharedPtr intent_sub_;
     rclcpp::Publisher<uav_web_agent::msg::MissionStatus>::SharedPtr status_pub_;
     rclcpp::Subscription<flight_core::msg::UavState>::SharedPtr battery_sub_;
     flight_core::msg::UavState::SharedPtr last_state_;
@@ -234,6 +280,7 @@ int main(int argc, char** argv)
 {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<UAVBtAgent>();
+    node->init();
     
     rclcpp::Rate rate(10);
     while(rclcpp::ok()) {

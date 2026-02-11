@@ -15,13 +15,23 @@ PX4Interface::PX4Interface(rclcpp::Node* node) : node_(node) {
     pos_sub_ = node_->create_subscription<VehicleLocalPosition>(
         "/fmu/out/vehicle_local_position_v1", qos,
         [this](const VehicleLocalPosition::SharedPtr msg) {
-            // 只有当数据有效时才更新
+            // 只有当数据有效时才更新，并转换为 ENU (ROS 标准)
             if (msg->xy_valid && msg->z_valid) {
-                current_state_.x = msg->x;
-                current_state_.y = msg->y;
-                current_state_.z = msg->z;
+                // NED -> ENU 转换
+                // NED X (North) -> ENU Y
+                // NED Y (East) -> ENU X
+                // NED Z (Down) -> ENU Z (Up, flipped)
+                current_state_.x = msg->y;
+                current_state_.y = msg->x;
+                current_state_.z = -msg->z;
                 current_state_.connected = true;
             }
+        });
+
+    battery_sub_ = node_->create_subscription<BatteryStatus>(
+        "/fmu/out/battery_status", qos,
+        [this](const BatteryStatus::SharedPtr msg) {
+            current_state_.battery = msg->remaining;
         });
 }
 
@@ -44,11 +54,14 @@ void PX4Interface::set_trajectory(const Target& target) {
     TrajectorySetpoint msg{};
     msg.timestamp = node_->get_clock()->now().nanoseconds() / 1000;
 
-    // 1. 位置设定 (确保传入的是 NED 坐标)
+    // 1. 位置设定 (ENU -> NED 转换)
+    // ENU X (East) -> NED Y
+    // ENU Y (North) -> NED X
+    // ENU Z (Up) -> NED Z (Down, flipped)
     msg.position = {
-        static_cast<float>(target.x),
         static_cast<float>(target.y),
-        static_cast<float>(target.z)
+        static_cast<float>(target.x),
+        static_cast<float>(-target.z)
     };
 
     // 2. 偏航角设定

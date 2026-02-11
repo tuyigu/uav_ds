@@ -92,8 +92,8 @@ void FlightCore::publish_uav_state(const CurrentState& current, FlightPhase phas
     msg.connected = current.connected;
     msg.armed     = current.armed;
 
-    // 先给个占位值，后续你可以从 PX4Interface 加电量
-    msg.battery   = 0.0f;
+    // 从 px4_.get_state() 获取真实电量
+    msg.battery   = current.battery;
 
     state_pub_->publish(msg);
 }
@@ -327,6 +327,17 @@ rclcpp_action::CancelResponse FlightCore::handle_move_cancel(
 void FlightCore::handle_move_accepted(
     const std::shared_ptr<GoalHandleMoveTo> goal_handle)
 {
+    {
+        std::lock_guard<std::mutex> lock(fsm_mutex_);
+        if (current_move_goal_handle_ && current_move_goal_handle_->is_active()) {
+            RCLCPP_INFO(get_logger(), "Preempting previous MoveTo goal");
+            auto result = std::make_shared<MoveTo::Result>();
+            result->success = false;
+            result->message = "Preempted by new goal";
+            current_move_goal_handle_->abort(result);
+        }
+        current_move_goal_handle_ = goal_handle;
+    }
     std::thread{std::bind(&FlightCore::execute_move, this, _1), goal_handle}.detach();
 }
 
@@ -353,6 +364,10 @@ void FlightCore::execute_move(
     rclcpp::Rate rate(10);
 
     while (rclcpp::ok()) {
+        if (!goal_handle->is_active()) {
+            return;
+        }
+
         if (goal_handle->is_canceling()) {
             auto current = px4_.get_state();
             {
@@ -377,7 +392,7 @@ void FlightCore::execute_move(
 
             float dx = goal->x - current.x;
             float dy = goal->y - current.y;
-            float dz = (-std::abs(goal->z)) - current.z;
+            float dz = goal->z - current.z;
             dist_to_goal = std::sqrt(dx * dx + dy * dy + dz * dz);
         }
 
