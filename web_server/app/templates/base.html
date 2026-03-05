@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title or 'UAV Command Center' }}</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@300;400;500;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <!-- CSS -->
+    <link rel="stylesheet" href="/static/css/main.css">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="top-bar">
+            <div class="logo">
+                <span class="icon">🛸</span>
+                <span class="text">UAV COMMAND CENTER</span>
+            </div>
+            <div class="status-indicators">
+                <div class="indicator" id="conn-status">
+                    <span class="label">LINK:</span>
+                    <span class="value disconnected">OFFLINE</span>
+                </div>
+                <div class="indicator" id="batt-status">
+                    <span class="label">BATT:</span>
+                    <span class="value">--%</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="content-area">
+            {% block content %}{% endblock %}
+        </main>
+
+        <!-- Footer -->
+        <footer class="bottom-bar">
+            <span>SYS.VER: 2.0.0-ALPHA // PROTOCOL: gRPC/WebRTC</span>
+        </footer>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="/static/js/main.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

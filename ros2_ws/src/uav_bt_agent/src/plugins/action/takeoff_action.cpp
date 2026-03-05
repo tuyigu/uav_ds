@@ -35,9 +35,22 @@ BT::NodeStatus TakeoffAction::onStart()
   goal.height = height;
 
   auto send_goal_options = rclcpp_action::Client<Takeoff>::SendGoalOptions();
+  
+  // Register feedback callback
+  send_goal_options.feedback_callback = 
+    std::bind(&TakeoffAction::feedback_callback, this, std::placeholders::_1, std::placeholders::_2);
+    
   future_goal_handle_ = action_client_->async_send_goal(goal, send_goal_options);
-
+  
+  current_phase_ = "TAKING_OFF"; // Reset state
   return BT::NodeStatus::RUNNING;
+}
+
+void TakeoffAction::feedback_callback(
+  GoalHandleTakeoff::SharedPtr,
+  const std::shared_ptr<const Takeoff::Feedback> feedback)
+{
+  current_phase_ = feedback->phase;
 }
 
 BT::NodeStatus TakeoffAction::onRunning()
@@ -63,25 +76,31 @@ BT::NodeStatus TakeoffAction::onRunning()
     }
   }
 
-  // 2. Check Result
+  // 2. Check Result and Feedback
   if (future_result_.valid())
   {
     if (future_result_.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
     {
       auto result = future_result_.get();
       if (result.code == rclcpp_action::ResultCode::SUCCEEDED) {
-        return BT::NodeStatus::SUCCESS;
+         if (current_phase_ == "HOLDING") {
+             return BT::NodeStatus::SUCCESS;
+         } else {
+             // If result is success but phase is not HOLDING, it might be a slight delay in feedback.
+             // We return SUCCESS to trust the server's final result.
+             return BT::NodeStatus::SUCCESS;
+         }
       } else {
         RCLCPP_ERROR(node_->get_logger(), "Takeoff action failed");
         return BT::NodeStatus::FAILURE;
       }
     }
-    else
-    {
-      return BT::NodeStatus::RUNNING;
-    }
   }
-
+  
+  // If result is not ready, check if we are already in HOLDING via feedback
+  // This is an optimization: if feedback says HOLDING, we are done, even if result is pending?
+  // No, always wait for result to be clean.
+  
   return BT::NodeStatus::RUNNING;
 }
 

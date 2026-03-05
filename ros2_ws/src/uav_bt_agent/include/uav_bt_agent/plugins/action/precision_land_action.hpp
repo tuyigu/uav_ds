@@ -35,14 +35,10 @@ private:
     flight_core::msg::ArucoMarkers::SharedPtr last_msg_;
     
     // State variables
+    // State variables
     bool landing_started_;
-    double current_x_, current_y_, current_z_; // Estimated current pos (or just rely on relative adjustments)
-    // Actually, we need current UAV state to send absolute MoveTo commands.
-    // Or we assume the marker pose IS the absolute position (in map frame).
-    // Yes, ArucoDetector publishes in MAP frame. So marker.pose.position IS the target location.
+    rclcpp::Time last_command_time_;
     
-    std::shared_future<rclcpp_action::ClientGoalHandle<MoveTo>::SharedPtr> move_handle_future_;
-    // We don't wait for move result, we just spam new goals (visual servoing).
-    // Or we accept the move result if we step slowly.
+    // std::shared_future<rclcpp_action::ClientGoalHandle<MoveTo>::SharedPtr> move_handle_future_; (Unused?)
 };
 }

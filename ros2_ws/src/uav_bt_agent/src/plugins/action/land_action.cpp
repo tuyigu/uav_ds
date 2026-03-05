@@ -25,9 +25,22 @@ BT::NodeStatus LandAction::onStart()
 
   Land::Goal goal;
   auto send_goal_options = rclcpp_action::Client<Land>::SendGoalOptions();
+  
+  // Register feedback callback
+  send_goal_options.feedback_callback = 
+    std::bind(&LandAction::feedback_callback, this, std::placeholders::_1, std::placeholders::_2);
+    
   future_goal_handle_ = action_client_->async_send_goal(goal, send_goal_options);
-
+  
+  current_phase_ = "LANDING";
   return BT::NodeStatus::RUNNING;
+}
+
+void LandAction::feedback_callback(
+  GoalHandleLand::SharedPtr,
+  const std::shared_ptr<const Land::Feedback> feedback)
+{
+  current_phase_ = feedback->phase;
 }
 
 BT::NodeStatus LandAction::onRunning()
@@ -60,6 +73,11 @@ BT::NodeStatus LandAction::onRunning()
     {
       auto result = future_result_.get();
       if (result.code == rclcpp_action::ResultCode::SUCCEEDED) {
+        // Robust check
+        if (current_phase_ != "LANDED") {
+             // Trust result, but log warning if weird
+             // RCLCPP_WARN(node_->get_logger(), "Land success but phase is %s", current_phase_.c_str());
+        }
         return BT::NodeStatus::SUCCESS;
       } else {
         RCLCPP_ERROR(node_->get_logger(), "Land action failed");

@@ -193,7 +193,10 @@ class OrchestratorNode(Node):
 
     def _on_uav_state(self, msg: UavState):
         """Drone physical state update from flight_core."""
-        self.health.battery_level = msg.battery
+        # Only update battery if valid (avoid 0.0 initialization issue)
+        if msg.battery > 0.001:
+            self.health.battery_level = msg.battery
+            
         self.health.connected = msg.connected
         self.health.armed = msg.armed
         self.health.pos_x = msg.x

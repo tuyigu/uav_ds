@@ -15,7 +15,7 @@ WebAgentNode::WebAgentNode(const rclcpp::NodeOptions& options)
 
   // 2) 来自 flight_core 的无人机状态 → 提供给 Web
   flight_state_sub_ = this->create_subscription<flight_core::msg::UavState>(
-    "flight/state", 10,
+    "flight/uav_state", 10,
     std::bind(&WebAgentNode::on_flight_state, this, std::placeholders::_1));
 
   web_uav_state_pub_ = this->create_publisher<flight_core::msg::UavState>(

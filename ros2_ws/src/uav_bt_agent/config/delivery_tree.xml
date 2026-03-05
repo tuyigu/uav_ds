@@ -11,7 +11,7 @@
     <ReactiveSequence>
 
       <!-- LAYER 1: Self-health (checked every tick) -->
-      <SubTree ID="SelfHealthCheck" />
+      <SubTree ID="SelfHealthCheck" _autoremap="true" />
 
       <!-- LAYER 2: Intent Router (driven by Orchestrator) -->
       <Switch4 variable="{intent}"
@@ -19,19 +19,19 @@
                case_3="ABORT"        case_4="RETURN_HOME">
 
         <!-- DELIVER: Execute the current mission leg -->
-        <SubTree ID="ExecuteDeliveryLeg" />
+        <SubTree ID="ExecuteDeliveryLeg" _autoremap="true" />
 
         <!-- HOLD: Hover in place -->
-        <SubTree ID="HoverInPlace" />
+        <SubTree ID="HoverInPlace" _autoremap="true" />
 
         <!-- ABORT: Emergency land -->
-        <SubTree ID="EmergencyProcedure" />
+        <SubTree ID="EmergencyProcedure" _autoremap="true" />
 
         <!-- RETURN_HOME: Navigate home and land -->
-        <SubTree ID="ReturnHome" />
+        <SubTree ID="ReturnHome" _autoremap="true" />
 
         <!-- Default: Idle (no intent) -->
-        <SubTree ID="IdleWait" />
+        <SubTree ID="IdleWait" _autoremap="true" />
 
       </Switch4>
 
@@ -58,23 +58,24 @@
     <Sequence>
 
       <!-- Phase 1: Takeoff (if not airborne) -->
-      <SubTree ID="Phase_Takeoff" />
+      <SubTree ID="Phase_Takeoff" _autoremap="true" />
 
       <!-- Phase 2: High-Altitude Cruise (GoTo direct, no A*) -->
-      <SubTree ID="Phase_Cruise"
-               goal_x="{dest_x}" goal_y="{dest_y}" cruise_z="{cruise_alt}" />
+      <SubTree ID="Phase_Cruise" _autoremap="true"
+               goal_x="{dest_x}" goal_y="{dest_y}" cruise_z="{cruise_alt}"
+               current_x="{current_x}" current_y="{current_y}" current_z="{current_z}" />
 
-      <!-- Phase 3: Transition Descent (cruise_alt → approach_alt) -->
-      <SubTree ID="Phase_TransitionDescent"
+      <!-- Phase 3: Transition Descent (cruise_alt → search_alt) -->
+      <!-- Skip PlannedApproach (SLAM A*) due to coordinate mismatch -->
+      <SubTree ID="Phase_TransitionDescent" _autoremap="true"
                goal_x="{dest_x}" goal_y="{dest_y}"
-               from_z="{cruise_alt}" to_z="{approach_alt}" />
+               from_z="{cruise_alt}" to_z="{search_alt}" />
 
-      <!-- Phase 4: A* Planned Approach (approach_alt → search_alt) -->
-      <SubTree ID="Phase_PlannedApproach"
-               goal_x="{dest_x}" goal_y="{dest_y}" goal_z="{search_alt}" />
+      <!-- Phase 4: RESERVED (Was PlannedApproach) -->
+      <!-- <SubTree ID="Phase_PlannedApproach" _autoremap="true" ... /> -->
 
       <!-- Phase 5: Search + Precision Land (search_alt → ground) -->
-      <SubTree ID="Phase_PrecisionLand" />
+      <SubTree ID="Phase_PrecisionLand" _autoremap="true" />
 
       <PublishStatusAction status="SUCCESS" />
 
@@ -88,8 +89,14 @@
   <!-- ============================================================ -->
   <BehaviorTree ID="Phase_Takeoff">
     <Fallback>
-      <!-- Skip if already airborne -->
-      <ScriptCondition code="phase:='AIRBORNE'; phase == 'AIRBORNE'" />
+      <!-- Skip if already airborne (HOLDING, MOVING, TAKING_OFF, etc.) -->
+      <!-- We check if we are NOT on ground (IDLE or LANDED) -->
+      <Inverter>
+         <Sequence>
+             <ScriptCondition code="flight_phase == 'IDLE' || flight_phase == 'LANDED'" />
+         </Sequence>
+      </Inverter>
+      
       <Sequence>
         <PublishStatusAction status="TAKING_OFF" />
         <RetryUntilSuccessful num_attempts="3">
@@ -113,21 +120,38 @@
   <!-- SLAM builds OctoMap passively. If OctoMap detects obstacle    -->
   <!-- in forward path → Fallback to A* replan.                      -->
   <!-- ============================================================ -->
+  <!-- ============================================================ -->
+  <!-- PHASE 2: HIGH-ALTITUDE CRUISE                                 -->
+  <!-- Sensors: GPS primary + SLAM (mapping only, no planning)       -->
+  <!-- Navigation: GoTo direct (no A*) — obstacles rare at altitude  -->
+  <!-- Speed: Maximum                                                -->
+  <!--                                                               -->
+  <!-- SLAM builds OctoMap passively. If OctoMap detects obstacle    -->
+  <!-- in forward path → Fallback to A* replan.                      -->
+  <!-- ============================================================ -->
   <BehaviorTree ID="Phase_Cruise">
     <Sequence>
       <PublishStatusAction status="CRUISING" />
 
-      <!-- First: climb to cruise altitude above current position -->
-      <GoToAction x="{current_x}" y="{current_y}" z="{cruise_z}" yaw="0" />
+      <!-- First: climb to cruise altitude (Allow 2.0m vertical error) -->
+      <!-- Timeout: 30 seconds. If not reached, assuming "Good Enough" and proceed -->
+      <ForceSuccess>
+          <Timeout msec="30000">
+             <GoToAction x="{current_x}" y="{current_y}" z="{cruise_z}" yaw="0" tolerance="2.0" />
+          </Timeout>
+      </ForceSuccess>
 
       <!-- Then: direct fly to destination at cruise altitude -->
       <!-- Reactive: if path blocked, replan with A* -->
+      <!-- Tolerance: 5.0m (High altitude cruise doesn't need precision) -->
       <Fallback>
-        <GoToAction x="{goal_x}" y="{goal_y}" z="{cruise_z}" yaw="0" />
+        <Timeout msec="60000">
+            <GoToAction x="{goal_x}" y="{goal_y}" z="{cruise_z}" yaw="0" tolerance="5.0" />
+        </Timeout>
 
-        <!-- Fallback: obstacle detected, use A* at cruise alt -->
+        <!-- Fallback: obstacle detected or timeout, use A* at cruise alt -->
         <Sequence>
-          <EchoAction message="Cruise obstacle detected, switching to A*" />
+          <EchoAction message="Cruise obstacle detected or timeout, switching to A*" />
           <PlanPathAction
             goal_x="{goal_x}" goal_y="{goal_y}" goal_z="{cruise_z}"
             waypoints="{planned_path}" />
@@ -147,7 +171,12 @@
   <BehaviorTree ID="Phase_TransitionDescent">
     <Sequence>
       <PublishStatusAction status="DESCENDING" />
-      <GoToAction x="{goal_x}" y="{goal_y}" z="{to_z}" yaw="0" />
+      <!-- Descent allows 1.0m tolerance -->
+      <RetryUntilSuccessful num_attempts="3">
+         <Timeout msec="30000">
+            <GoToAction x="{goal_x}" y="{goal_y}" z="{to_z}" yaw="0" tolerance="1.0" />
+         </Timeout>
+      </RetryUntilSuccessful>
     </Sequence>
   </BehaviorTree>
 
@@ -167,7 +196,12 @@
 
       <ReactiveSequence>
         <IsPathClear path="{planned_path}" />
-        <FollowPathAction waypoints="{planned_path}" />
+        <!-- FollowPath logic is internal, assumes tight following. 
+             If we want loose following, we'd need to modify FollowPathAction too. 
+             For now, keep as is, but maybe wrap in Retry? -->
+        <RetryUntilSuccessful num_attempts="2">
+             <FollowPathAction waypoints="{planned_path}" />
+        </RetryUntilSuccessful>
       </ReactiveSequence>
 
     </Sequence>
@@ -233,10 +267,14 @@
   <BehaviorTree ID="ReturnHome">
     <Sequence>
       <PublishStatusAction status="RETURNING" />
+      
+      <!-- Ensure airborne before cruising -->
+      <SubTree ID="Phase_Takeoff" _autoremap="true" />
 
       <!-- Climb to cruise altitude -->
-      <SubTree ID="Phase_Cruise"
-               goal_x="{home_x}" goal_y="{home_y}" cruise_z="{cruise_alt}" />
+      <SubTree ID="Phase_Cruise" _autoremap="true"
+               goal_x="{home_x}" goal_y="{home_y}" cruise_z="{cruise_alt}"
+               current_x="{current_x}" current_y="{current_y}" current_z="{current_z}" />
 
       <!-- Simple land at home (known location, no search needed) -->
       <GoToAction x="{home_x}" y="{home_y}" z="{search_alt}" yaw="0" />

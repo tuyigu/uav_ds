@@ -28,5 +28,8 @@ private:
   rclcpp_action::Client<Land>::SharedPtr action_client_;
   std::shared_future<GoalHandleLand::SharedPtr> future_goal_handle_;
   std::shared_future<GoalHandleLand::WrappedResult> future_result_;
+  
+  std::string current_phase_;
+  void feedback_callback(GoalHandleLand::SharedPtr, const std::shared_ptr<const Land::Feedback> feedback);
 };
 }  // namespace uav_bt_agent

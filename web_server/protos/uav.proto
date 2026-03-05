@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package uav;
+
+service FlightControl {
+    // 基础控制
+    rpc Arm (Empty) returns (CommandReply) {}
+    rpc Disarm (Empty) returns (CommandReply) {}
+    rpc Takeoff (TakeoffRequest) returns (CommandReply) {}
+    rpc Land (Empty) returns (CommandReply) {}
+    rpc ReturnToHome (Empty) returns (CommandReply) {}
+    
+    // 移动控制
+    rpc GoTo (Position) returns (CommandReply) {}
+    
+    // 状态流 (Server-side streaming)
+    rpc StreamState (Empty) returns (stream UavState) {}
+}
+
+message Empty {}
+
+message CommandReply {
+    bool success = 1;
+    string message = 2;
+}
+
+message TakeoffRequest {
+    float height = 1;
+}
+
+message Position {
+    float x = 1;
+    float y = 2;
+    float z = 3;
+    float yaw = 4;
+}
+
+message UavState {
+    string mission_id = 1;
+    string mode = 2;        // MANUAL, OFFBOARD, HOLD, etc.
+    string flight_phase = 3; // IDLE, TAKING_OFF, MOVING...
+    float battery = 4;      // 0.0 - 1.0
+    Position position = 5;
+    bool armed = 6;
+    bool connected = 7;
+    int64 timestamp = 8;
+}

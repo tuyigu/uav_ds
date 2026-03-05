@@ -22,11 +22,19 @@ public:
   BT::NodeStatus onStart() override;
   BT::NodeStatus onRunning() override;
   void onHalted() override;
+  
+  void handle_feedback(
+    GoalHandleMoveTo::SharedPtr,
+    const std::shared_ptr<const MoveTo::Feedback> feedback);
 
 private:
   rclcpp::Node::SharedPtr node_;
   rclcpp_action::Client<MoveTo>::SharedPtr action_client_;
   std::shared_future<GoalHandleMoveTo::SharedPtr> future_goal_handle_;
   std::shared_future<GoalHandleMoveTo::WrappedResult> future_result_;
+  
+  float tolerance_;
+  float current_distance_;
+  bool got_first_feedback_;
 };
 }  // namespace uav_bt_agent

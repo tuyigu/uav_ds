@@ -1,10 +1,8 @@
 #include "flight_core/flight_core.hpp"
 #include <cmath>
-#include <iostream>
+// 移除了不必要的 <iostream> 和 std::placeholders
 
 using namespace std::chrono_literals;
-using std::placeholders::_1;
-using std::placeholders::_2;
 
 namespace flight_core {
 
@@ -15,48 +13,50 @@ namespace flight_core {
 FlightCore::FlightCore() : Node("flight_core"), px4_(this)
 {
     // 1. 定时器 (20Hz)：控制回路 + 状态发布
+    // [优化] 使用 Lambda 捕获 this 指针替代 std::bind，代码更直观且利于编译器内联优化
     timer_ = this->create_wall_timer(
-        50ms, std::bind(&FlightCore::on_timer, this));
+        50ms, [this]() { on_timer(); });
 
-    // 2. UAV 状态发布
+    // 2. UAV 状态发布器：用于向行为树或其他节点广播当前飞行状态
     state_pub_ = this->create_publisher<flight_core::msg::UavState>(
-        "flight/state", 10);
+        "flight/uav_state", 10);
 
     // 3. 创建 Action Servers
+    // [优化] 统一使用 C++14 泛型 Lambda (auto 参数) 处理回调，彻底消除 std::bind 的开销
 
-    // 3.1 Takeoff Action
+    // 3.1 Takeoff (起飞) Action 服务器
     takeoff_action_server_ = rclcpp_action::create_server<Takeoff>(
         this,
         "flight/takeoff",
-        std::bind(&FlightCore::handle_takeoff_goal, this, _1, _2),
-        std::bind(&FlightCore::handle_takeoff_cancel, this, _1),
-        std::bind(&FlightCore::handle_takeoff_accepted, this, _1)
+        [this](auto uuid, auto goal) { return handle_takeoff_goal(uuid, goal); },
+        [this](auto handle) { return handle_takeoff_cancel(handle); },
+        [this](auto handle) { handle_takeoff_accepted(handle); }
     );
 
-    // 3.2 Land Action
+    // 3.2 Land (降落) Action 服务器
     land_action_server_ = rclcpp_action::create_server<Land>(
         this,
         "flight/land",
-        std::bind(&FlightCore::handle_land_goal, this, _1, _2),
-        std::bind(&FlightCore::handle_land_cancel, this, _1),
-        std::bind(&FlightCore::handle_land_accepted, this, _1)
+        [this](auto uuid, auto goal) { return handle_land_goal(uuid, goal); },
+        [this](auto handle) { return handle_land_cancel(handle); },
+        [this](auto handle) { handle_land_accepted(handle); }
     );
 
-    // 3.3 MoveTo Action（沿用原有接口）
+    // 3.3 MoveTo (移动到目标点) Action 服务器
     move_action_server_ = rclcpp_action::create_server<MoveTo>(
         this,
         "flight/move_to",
-        std::bind(&FlightCore::handle_move_goal, this, _1, _2),
-        std::bind(&FlightCore::handle_move_cancel, this, _1),
-        std::bind(&FlightCore::handle_move_accepted, this, _1)
+        [this](auto uuid, auto goal) { return handle_move_goal(uuid, goal); },
+        [this](auto handle) { return handle_move_cancel(handle); },
+        [this](auto handle) { handle_move_accepted(handle); }
     );
 
     RCLCPP_INFO(get_logger(),
-                "Flight Core Initialized (Takeoff/Land as Actions, with UAV state publisher).");
+                "Flight Core Initialized (基于现代 C++ Lambda 注册 Action 和定时器).");
 }
 
 // ======================================================================================
-// 飞行阶段转字符串
+// 辅助函数：飞行阶段枚举转字符串 (用于日志和消息发布)
 // ======================================================================================
 
 std::string FlightCore::phase_to_string(FlightPhase phase) const
@@ -73,7 +73,7 @@ std::string FlightCore::phase_to_string(FlightPhase phase) const
 }
 
 // ======================================================================================
-// UAV 状态发布
+// 核心逻辑：UAV 状态发布
 // ======================================================================================
 
 void FlightCore::publish_uav_state(const CurrentState& current, FlightPhase phase)
@@ -84,22 +84,25 @@ void FlightCore::publish_uav_state(const CurrentState& current, FlightPhase phas
     msg.phase = phase_to_string(phase);
     msg.sub_phase = "";  // 目前先留空，后续可由行为树/上层逻辑填充更细粒度状态
 
+    // 坐标与姿态同步
     msg.x = static_cast<float>(current.x);
     msg.y = static_cast<float>(current.y);
     msg.z = static_cast<float>(current.z);
+
     msg.yaw = static_cast<float>(current.yaw);
 
+    // 硬件连接与解锁状态
     msg.connected = current.connected;
     msg.armed     = current.armed;
 
-    // 从 px4_.get_state() 获取真实电量
+    // 从 px4_.get_state() 获取的真实电量百分比
     msg.battery   = current.battery;
 
     state_pub_->publish(msg);
 }
 
 // ======================================================================================
-// Takeoff Action 回调
+// Takeoff Action 回调组
 // ======================================================================================
 
 rclcpp_action::GoalResponse FlightCore::handle_takeoff_goal(
@@ -107,17 +110,15 @@ rclcpp_action::GoalResponse FlightCore::handle_takeoff_goal(
     std::shared_ptr<const Takeoff::Goal> goal)
 {
     (void)uuid;
-    (void)goal;
+    std::lock_guard<std::mutex> lock(fsm_mutex_); // 保护状态机读取
 
-    std::lock_guard<std::mutex> lock(fsm_mutex_);
-
-    // 只允许在 IDLE 或 LANDED 时起飞
+    // 只允许在 IDLE 或 LANDED (地面状态) 时起飞
     if (fsm_.phase() == FlightPhase::IDLE || fsm_.phase() == FlightPhase::LANDED) {
-        RCLCPP_INFO(get_logger(), "Received Takeoff goal: height=%.2f", goal->height);
+        RCLCPP_INFO(get_logger(), "接收到起飞请求: 目标高度=%.2f", goal->height);
         return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
     }
 
-    RCLCPP_WARN(get_logger(), "Rejecting Takeoff goal: invalid phase %s",
+    RCLCPP_WARN(get_logger(), "拒绝起飞请求: 当前处于非法阶段 %s",
                 phase_to_string(fsm_.phase()).c_str());
     return rclcpp_action::GoalResponse::REJECT;
 }
@@ -126,14 +127,16 @@ rclcpp_action::CancelResponse FlightCore::handle_takeoff_cancel(
     const std::shared_ptr<GoalHandleTakeoff> goal_handle)
 {
     (void)goal_handle;
-    RCLCPP_WARN(get_logger(), "Takeoff cancel requested (not supported, ignoring).");
+    // 起飞过程通常很短且关乎安全，一般不支持中途取消，直接拒绝取消请求
+    RCLCPP_WARN(get_logger(), "收到取消起飞的请求 (不支持中断，已忽略).");
     return rclcpp_action::CancelResponse::REJECT;
 }
 
 void FlightCore::handle_takeoff_accepted(
     const std::shared_ptr<GoalHandleTakeoff> goal_handle)
 {
-    std::thread{std::bind(&FlightCore::execute_takeoff, this, _1), goal_handle}.detach();
+    // [优化] 使用 Lambda 启动新线程执行实际起飞逻辑，避免阻塞 ROS 2 调度器
+    std::thread{[this, goal_handle]() { execute_takeoff(goal_handle); }}.detach();
 }
 
 void FlightCore::execute_takeoff(
@@ -146,7 +149,7 @@ void FlightCore::execute_takeoff(
     auto current = px4_.get_state();
     if (!current.connected) {
         result->success = false;
-        result->message = "PX4 Not Connected";
+        result->message = "PX4 未连接，起飞中止";
         goal_handle->abort(result);
         return;
     }
@@ -154,57 +157,60 @@ void FlightCore::execute_takeoff(
     {
         std::lock_guard<std::mutex> lock(fsm_mutex_);
 
+        // 尝试在状态机中触发起飞
         if (!fsm_.trigger_takeoff(goal->height, current.x, current.y)) {
             result->success = false;
-            result->message = "FSM rejected takeoff";
+            result->message = "状态机 (FSM) 拒绝了起飞操作";
             goal_handle->abort(result);
             return;
         }
 
-        // 起飞流程：先 Offboard，再 Arm
+        // 起飞物理流程：必须先切入 Offboard 模式，然后再执行 Arm (解锁)g
         px4_.command_switch_offboard();
         px4_.command_arm();
     }
 
-    rclcpp::Rate rate(10);
+    rclcpp::Rate rate(10); // 10Hz 监控循环
 
     while (rclcpp::ok()) {
         current = px4_.get_state();
-
         FlightPhase phase;
         {
             std::lock_guard<std::mutex> lock(fsm_mutex_);
             phase = fsm_.phase();
         }
 
+        // 发布进度反馈
         feedback->current_z = static_cast<float>(current.z);
         feedback->phase     = phase_to_string(phase);
         goal_handle->publish_feedback(feedback);
 
+        // 如果状态机切入 HOLDING，说明已经达到目标起飞高度
         if (phase == FlightPhase::HOLDING) {
             result->success = true;
-            result->message = "Takeoff succeeded";
+            result->message = "起飞成功，进入悬停模式";
             goal_handle->succeed(result);
             return;
         }
 
+        // 处理 Goal 被外部强制 Abort 的情况
         if (!goal_handle->is_active()) {
-            // 被外部终止
             result->success = false;
-            result->message = "Takeoff aborted";
+            result->message = "起飞动作被中断";
             return;
         }
 
         rate.sleep();
     }
 
+    // 节点关闭时的异常退出
     result->success = false;
-    result->message = "Node shutting down";
+    result->message = "ROS 节点正在关闭";
     goal_handle->abort(result);
 }
 
 // ======================================================================================
-// Land Action 回调
+// Land Action 回调组
 // ======================================================================================
 
 rclcpp_action::GoalResponse FlightCore::handle_land_goal(
@@ -213,16 +219,15 @@ rclcpp_action::GoalResponse FlightCore::handle_land_goal(
 {
     (void)uuid;
     (void)goal;
-
     std::lock_guard<std::mutex> lock(fsm_mutex_);
 
-    // 只要不在 IDLE/LANDED，就允许降落
+    // 只要飞机不在地面上 (IDLE/LANDED)，就允许触发降落
     if (fsm_.phase() == FlightPhase::IDLE || fsm_.phase() == FlightPhase::LANDED) {
-        RCLCPP_WARN(get_logger(), "Rejecting Land goal: already on ground.");
+        RCLCPP_WARN(get_logger(), "拒绝降落请求: 飞机已经在地面上了.");
         return rclcpp_action::GoalResponse::REJECT;
     }
 
-    RCLCPP_INFO(get_logger(), "Received Land goal");
+    RCLCPP_INFO(get_logger(), "接收到降落请求");
     return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
 
@@ -230,14 +235,15 @@ rclcpp_action::CancelResponse FlightCore::handle_land_cancel(
     const std::shared_ptr<GoalHandleLand> goal_handle)
 {
     (void)goal_handle;
-    RCLCPP_WARN(get_logger(), "Land cancel requested (not supported, ignoring).");
+    RCLCPP_WARN(get_logger(), "收到取消降落的请求 (出于安全考虑不支持取消，已忽略).");
     return rclcpp_action::CancelResponse::REJECT;
 }
 
 void FlightCore::handle_land_accepted(
     const std::shared_ptr<GoalHandleLand> goal_handle)
 {
-    std::thread{std::bind(&FlightCore::execute_land, this, _1), goal_handle}.detach();
+    // [优化] 使用 Lambda 启动新线程执行实际降落逻辑
+    std::thread{[this, goal_handle]() { execute_land(goal_handle); }}.detach();
 }
 
 void FlightCore::execute_land(
@@ -250,16 +256,16 @@ void FlightCore::execute_land(
         std::lock_guard<std::mutex> lock(fsm_mutex_);
         if (!fsm_.trigger_land()) {
             result->success = false;
-            result->message = "FSM rejected land";
+            result->message = "状态机 (FSM) 拒绝了降落操作";
             goal_handle->abort(result);
             return;
         }
 
-        // 切 PX4 Land 模式
+        // 直接调用 PX4 原生的 Auto Land 模式接管降落，更加安全可靠
         px4_.command_switch_land();
     }
 
-    rclcpp::Rate rate(10);
+    rclcpp::Rate rate(10); // 10Hz 监控循环
 
     while (rclcpp::ok()) {
         auto current = px4_.get_state();
@@ -273,16 +279,17 @@ void FlightCore::execute_land(
         feedback->phase     = phase_to_string(phase);
         goal_handle->publish_feedback(feedback);
 
+        // 如果状态变为 LANDED，说明飞机已经触地并自动上锁 (Disarm)
         if (phase == FlightPhase::LANDED) {
             result->success = true;
-            result->message = "Land succeeded";
+            result->message = "降落成功";
             goal_handle->succeed(result);
             return;
         }
 
         if (!goal_handle->is_active()) {
             result->success = false;
-            result->message = "Land aborted";
+            result->message = "降落动作被中断";
             return;
         }
 
@@ -290,12 +297,12 @@ void FlightCore::execute_land(
     }
 
     result->success = false;
-    result->message = "Node shutting down";
+    result->message = "ROS 节点正在关闭";
     goal_handle->abort(result);
 }
 
 // ======================================================================================
-// MoveTo Action
+// MoveTo Action 回调组
 // ======================================================================================
 
 rclcpp_action::GoalResponse FlightCore::handle_move_goal(
@@ -306,12 +313,13 @@ rclcpp_action::GoalResponse FlightCore::handle_move_goal(
     (void)goal;
     std::lock_guard<std::mutex> lock(fsm_mutex_);
 
+    // 只有在空中悬停 (HOLDING) 或正在移动 (MOVING) 时才能接收新的移动目标
     if (fsm_.phase() == FlightPhase::HOLDING || fsm_.phase() == FlightPhase::MOVING) {
-        RCLCPP_INFO(get_logger(), "Received MoveTo goal");
+        RCLCPP_INFO(get_logger(), "接收到 MoveTo (移动) 请求");
         return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
     }
 
-    RCLCPP_WARN(get_logger(), "Rejecting MoveTo goal: invalid phase %s",
+    RCLCPP_WARN(get_logger(), "拒绝 MoveTo 请求: 当前处于非法阶段 %s",
                 phase_to_string(fsm_.phase()).c_str());
     return rclcpp_action::GoalResponse::REJECT;
 }
@@ -320,7 +328,8 @@ rclcpp_action::CancelResponse FlightCore::handle_move_cancel(
     const std::shared_ptr<GoalHandleMoveTo> goal_handle)
 {
     (void)goal_handle;
-    RCLCPP_INFO(get_logger(), "MoveTo cancel requested");
+    // 允许随时取消移动，取消后无人机会在当前位置刹车悬停
+    RCLCPP_INFO(get_logger(), "收到取消 MoveTo 的请求");
     return rclcpp_action::CancelResponse::ACCEPT;
 }
 
@@ -329,16 +338,18 @@ void FlightCore::handle_move_accepted(
 {
     {
         std::lock_guard<std::mutex> lock(fsm_mutex_);
+        // 如果当前有正在执行的移动任务，进行抢占 (Preempt)
         if (current_move_goal_handle_ && current_move_goal_handle_->is_active()) {
-            RCLCPP_INFO(get_logger(), "Preempting previous MoveTo goal");
+            RCLCPP_INFO(get_logger(), "中止旧的 MoveTo 任务，执行新目标...");
             auto result = std::make_shared<MoveTo::Result>();
             result->success = false;
-            result->message = "Preempted by new goal";
+            result->message = "被新的移动目标抢占";
             current_move_goal_handle_->abort(result);
         }
         current_move_goal_handle_ = goal_handle;
     }
-    std::thread{std::bind(&FlightCore::execute_move, this, _1), goal_handle}.detach();
+    // [优化] 使用 Lambda 启动新线程
+    std::thread{[this, goal_handle]() { execute_move(goal_handle); }}.detach();
 }
 
 void FlightCore::execute_move(
@@ -348,34 +359,35 @@ void FlightCore::execute_move(
     auto feedback = std::make_shared<MoveTo::Feedback>();
     auto result   = std::make_shared<MoveTo::Result>();
 
-    RCLCPP_INFO(get_logger(), "Executing MoveTo: (%.2f, %.2f, %.2f, yaw=%.2f)",
+    RCLCPP_INFO(get_logger(), "开始执行 MoveTo: 目标点(%.2f, %.2f, %.2f, yaw=%.2f)",
                 goal->x, goal->y, goal->z, goal->yaw);
 
     {
         std::lock_guard<std::mutex> lock(fsm_mutex_);
         if (!fsm_.trigger_move(goal->x, goal->y, goal->z, goal->yaw)) {
             result->success = false;
-            result->message = "FSM rejected move";
+            result->message = "状态机 (FSM) 拒绝了移动请求";
             goal_handle->abort(result);
             return;
         }
     }
 
-    rclcpp::Rate rate(10);
+    rclcpp::Rate rate(10); // 10Hz 监控循环
 
     while (rclcpp::ok()) {
         if (!goal_handle->is_active()) {
-            return;
+            return; // 任务已被终止（如被抢占）
         }
 
+        // 处理客户端发起的取消请求
         if (goal_handle->is_canceling()) {
             auto current = px4_.get_state();
             {
                 std::lock_guard<std::mutex> lock(fsm_mutex_);
-                fsm_.trigger_hold(current);
+                fsm_.trigger_hold(current); // 触发刹车悬停
             }
             RCLCPP_INFO(get_logger(),
-                        "MoveTo canceled: hold at (%.2f, %.2f, %.2f)",
+                        "MoveTo 已取消: 无人机正在 (%.2f, %.2f, %.2f) 处刹车悬停",
                         current.x, current.y, current.z);
             result->success = false;
             goal_handle->canceled(result);
@@ -390,20 +402,23 @@ void FlightCore::execute_move(
             std::lock_guard<std::mutex> lock(fsm_mutex_);
             phase = fsm_.phase();
 
+            // 计算到目标点的欧氏距离
             float dx = goal->x - current.x;
             float dy = goal->y - current.y;
             float dz = goal->z - current.z;
             dist_to_goal = std::sqrt(dx * dx + dy * dy + dz * dz);
         }
 
+        // 发布距离反馈
         feedback->current_x = current.x;
         feedback->current_y = current.y;
         feedback->current_z = current.z;
         feedback->distance_to_goal = dist_to_goal;
         goal_handle->publish_feedback(feedback);
 
+        // 到达目标点，状态机自动切回 HOLDING
         if (phase == FlightPhase::HOLDING) {
-            RCLCPP_INFO(get_logger(), "MoveTo succeeded");
+            RCLCPP_INFO(get_logger(), "MoveTo 抵达目标点");
             result->success = true;
             goal_handle->succeed(result);
             return;
@@ -413,47 +428,48 @@ void FlightCore::execute_move(
     }
 
     result->success = false;
-    result->message = "Node shutting down";
+    result->message = "ROS 节点正在关闭";
     goal_handle->abort(result);
 }
 
 // ======================================================================================
-// 核心定时器：控制回路 + 状态发布
+// 核心定时器：控制回路 + 状态发布 (执行频率: 20Hz)
 // ======================================================================================
 
 void FlightCore::on_timer()
 {
-    // 1. Offboard 心跳
+    // 1. Offboard 心跳机制 (PX4 要求在切入 Offboard 前及过程中，必须持续发送设定点)
     px4_.publish_heartbeat();
 
-    // 2. 读取当前状态
+    // 2. 读取当前状态并更新状态机
     auto current = px4_.get_state();
     Target target_to_pub;
     FlightPhase phase;
 
     {
         std::lock_guard<std::mutex> lock(fsm_mutex_);
+        // fsm_ 会在内部计算出一条平滑逼近目标的“虚拟兔子 (Track Target)”轨迹
         fsm_.update_state(current);
         phase = fsm_.phase();
         target_to_pub = fsm_.track_target();
     }
 
-    // 3. 发布 UAV 状态（给行为树、监控等用）
+    // 3. 发布 UAV 当前状态（给行为树、前端监控等业务逻辑使用）
     publish_uav_state(current, phase);
 
-    // 4. 根据阶段决定是否给 PX4 发送轨迹
+    // 4. 根据当前阶段决定是否给 PX4 发送位置设定点
     if (phase == FlightPhase::IDLE || phase == FlightPhase::LANDED) {
+        // 在地面不发控制指令
         return;
     }
 
     if (phase == FlightPhase::LANDING) {
-        // 假设 LANDING 完全由 PX4 原生 Land 模式接管
+        // LANDING 完全由 PX4 原生 Land 模式接管，不需要下发期望轨迹
         return;
     }
 
-    // TAKING_OFF / HOLDING / MOVING
+    // TAKING_OFF / HOLDING / MOVING 状态下，向 PX4 下发平滑轨迹目标
     px4_.set_trajectory(target_to_pub);
 }
 
 } // namespace flight_core
-

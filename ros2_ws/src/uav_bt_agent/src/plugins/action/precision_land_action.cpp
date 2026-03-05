@@ -147,8 +147,12 @@ void PrecisionLandAction::msgCallback(const flight_core::msg::ArucoMarkers::Shar
 
 void PrecisionLandAction::sendMoveCommand(double x, double y, double z, double yaw)
 {
-    // Throttle commands (e.g. 5Hz) if needed
-    // For now, just send.
+    // Throttle commands (e.g. 2Hz)
+    auto now = node_->get_clock()->now();
+    if ((now - last_command_time_).seconds() < 0.5) {
+        return;
+    }
+    last_command_time_ = now;
     
     MoveTo::Goal goal;
     goal.x = x;
@@ -157,7 +161,6 @@ void PrecisionLandAction::sendMoveCommand(double x, double y, double z, double y
     goal.yaw = yaw;
     
     auto opts = rclcpp_action::Client<MoveTo>::SendGoalOptions();
-    // We don't wait for result, fire and forget (visual servoing style)
     move_client_->async_send_goal(goal, opts);
 }
 

@@ -1,7 +1,7 @@
 #include "flight_core/flight_fsm.hpp"
 #include <cmath>
 #include <algorithm>
-#include <iostream>
+// 移除了未使用的 <iostream>
 
 namespace flight_core {
 
@@ -12,10 +12,7 @@ static constexpr double MAX_SPEED_Z  = 0.7; // m/s
 static constexpr double MAX_YAW_RATE = 0.5; // rad/s
 static constexpr double DT           = 0.05; // 50ms
 
-// 辅助：计算两点平面距离
-static double dist_sq_xy(const Target& a, const Target& b) {
-    return std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2);
-}
+// 删除了未使用的 dist_sq_xy 函数
 
 // ---------------------------------------------------------
 // 起飞
@@ -31,7 +28,7 @@ bool FlightFSM::trigger_takeoff(double height, double current_x, double current_
 
     // 影子目标直接跟上
     track_target_ = goal_target_;
-    
+
     // 重置速度状态
     current_vel_ = {0.0, 0.0, 0.0};
 
@@ -76,9 +73,7 @@ bool FlightFSM::trigger_hold(const CurrentState& current_pos) {
         track_target_.x = current_pos.x;
         track_target_.y = current_pos.y;
         track_target_.z = current_pos.z;
-        track_target_.yaw = current_pos.yaw;
-
-        track_target_.yaw = current_pos.yaw;
+        track_target_.yaw = current_pos.yaw; // 修复了这里原本重复赋值两次的冗余代码
 
         goal_target_ = track_target_;
         phase_ = FlightPhase::HOLDING;
@@ -111,8 +106,7 @@ void FlightFSM::update_state(const CurrentState& cur) {
         double dy = goal_target_.y - track_target_.y;
         double dz = goal_target_.z - track_target_.z;
 
-        double dist_rem_xy = std::sqrt(dx*dx + dy*dy);
-        double dist_rem_z  = std::abs(dz);
+        // 删除了未使用的 dist_rem_xy 和 dist_rem_z 变量
 
         // 判定物理位置是否已接近终点
         double dist_phys_to_goal = std::sqrt(
@@ -130,7 +124,7 @@ void FlightFSM::update_state(const CurrentState& cur) {
 
         // B. 平滑速度控制 (XY)
         // 1. 计算期望速度 (P控制: 越远越快，但也受最大速度限制)
-        double kP = 1.0; 
+        double kP = 1.0;
         double des_vel_x = dx * kP;
         double des_vel_y = dy * kP;
 
@@ -167,17 +161,17 @@ void FlightFSM::update_state(const CurrentState& cur) {
         if (des_speed_z > MAX_SPEED_Z) {
             des_vel_z = (des_vel_z / des_speed_z) * MAX_SPEED_Z;
         }
-        
-        double max_accel_z = 0.3; 
+
+        double max_accel_z = 0.3;
         double max_delta_vz = max_accel_z * DT;
-        
+
         double diff_vz = des_vel_z - current_vel_.z;
         if (std::abs(diff_vz) > max_delta_vz) {
             current_vel_.z += std::copysign(max_delta_vz, diff_vz);
         } else {
             current_vel_.z = des_vel_z;
         }
-        
+
         track_target_.z += current_vel_.z * DT;
 
         // [安全牵引绳] Leash Logic
@@ -206,4 +200,3 @@ void FlightFSM::update_state(const CurrentState& cur) {
 }
 
 } // namespace flight_core
-

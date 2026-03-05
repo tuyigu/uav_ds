@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>无人机指挥控制台</title>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Vue.js -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="/static/css/main.css">
+</head>
+
+<body>
+    {% raw %}
+    <div id="dashboard-app" class="app-container">
+
+        <!-- Sidebar / Navigation -->
+        <aside class="sidebar">
+            <div class="brand">
+                <i class="fas fa-paper-plane"></i>
+                <span>UAV CONTROL</span>
+            </div>
+
+            <div class="status-card">
+                <div class="status-row">
+                    <span class="label">链路状态</span>
+                    <span class="status-dot" :class="videoStatus === 'Connected' ? 'online' : 'offline'"></span>
+                </div>
+                <div class="status-row">
+                    <span class="label">无人机电量</span>
+                    <span class="value">{{ (position.battery * 100).toFixed(0) }}%</span>
+                </div>
+                <div class="battery-track">
+                    <div class="battery-fill"
+                        :style="{ width: (position.battery * 100) + '%', backgroundColor: getBatteryColor(position.battery) }">
+                    </div>
+                </div>
+            </div>
+
+            <div class="flight-info">
+                <div class="info-item">
+                    <span class="label">飞行模式</span>
+                    <span class="value">{{ currentMode }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">当前阶段</span>
+                    <span class="value highlight">{{ flightPhaseCN }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">布防状态</span>
+                    <span class="value" :class="isArmed ? 'text-warn' : 'text-safe'">{{ isArmed ? '已解锁' : '已锁定'
+                        }}</span>
+                </div>
+            </div>
+
+            <div class="log-panel">
+                <div class="panel-title">系统日志</div>
+                <div class="log-list" ref="logContainer">
+                    <div v-for="(log, index) in logs" :key="index" class="log-item">
+                        <span class="time">{{ log.time.split(' ')[1] }}</span>
+                        <span class="msg">{{ log.msg }}</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Top Bar: Telemetry -->
+            <header class="telemetry-bar">
+                <div class="telemetry-group">
+                    <div class="t-item">
+                        <i class="fas fa-map-marker-alt"></i>
+                        <div>
+                            <span class="t-label">纬度 / Lat</span>
+                            <span class="t-value">{{ position.lat.toFixed(7) }}</span>
+                        </div>
+                    </div>
+                    <div class="t-item">
+                        <div>
+                            <span class="t-label">经度 / Lon</span>
+                            <span class="t-value">{{ position.lon.toFixed(7) }}</span>
+                        </div>
+                    </div>
+                    <div class="t-item">
+                        <i class="fas fa-ruler-vertical"></i>
+                        <div>
+                            <span class="t-label">高度 / Alt</span>
+                            <span class="t-value">{{ currentAlt.toFixed(2) }} <small>m</small></span>
+                        </div>
+                    </div>
+                    <div class="t-item compass-item">
+                        <i class="fas fa-compass"></i>
+                        <div>
+                            <span class="t-label">航向 / Yaw</span>
+                            <span class="t-value">{{ position.yaw.toFixed(1) }}°</span>
+                        </div>
+                        <div class="mini-compass" :style="{ transform: `rotate(${position.yaw}deg)` }">
+                            <i class="fas fa-location-arrow"></i>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Video Feed -->
+            <section class="video-section">
+                <div class="video-wrapper">
+                    <video id="webrtc-video" autoplay playsinline muted></video>
+
+                    <!-- Clean HUD -->
+                    <div class="hud-layer" v-if="videoPlaying">
+                        <div class="hud-top-center">
+                            <div class="compass-strip">
+                                <span>N</span><span>|</span><span>E</span><span>|</span><span>S</span><span>|</span><span>W</span>
+                            </div>
+                        </div>
+                        <div class="hud-center-crosshair">+</div>
+                        <div class="hud-bottom-left">CAM-01 SIGNAL: GOOD</div>
+                    </div>
+
+                    <div class="video-placeholder" v-if="!videoPlaying">
+                        <i class="fas fa-video-slash"></i>
+                        <p>{{ videoStatus === 'Connected' ? '准备就绪' : '等待连接...' }}</p>
+                    </div>
+                </div>
+
+                <div class="video-controls">
+                    <button class="btn btn-ghost" @click="startVideo" :disabled="videoPlaying">
+                        <i class="fas fa-play"></i> {{ videoPlaying ? '图传传输中' : '连接图传' }}
+                    </button>
+                </div>
+            </section>
+
+            <!-- Quick Actions -->
+            <section class="actions-bar">
+                <div class="action-group primary">
+                    <button class="btn btn-lg" :class="isArmed ? 'btn-danger' : 'btn-success'"
+                        @click="sendCommand(isArmed ? 'disarm' : 'arm')">
+                        <i class="fas fa-power-off"></i> {{ isArmed ? '紧急锁定' : '解锁起飞准备' }}
+                    </button>
+                </div>
+
+                <div class="action-group flight-controls">
+                    <div class="input-wrapper">
+                        <span>高度(m)</span>
+                        <input type="number" v-model.number="takeoffHeight" min="1" max="50" step="0.5">
+                    </div>
+                    <button class="btn btn-primary" @click="takeoff">
+                        <i class="fas fa-arrow-up"></i> 起飞
+                    </button>
+                    <button class="btn btn-secondary" @click="sendCommand('land')">
+                        <i class="fas fa-arrow-down"></i> 降落
+                    </button>
+                    <button class="btn btn-secondary" @click="sendCommand('return_home')">
+                        <i class="fas fa-home"></i> 返航
+                    </button>
+                </div>
+
+                <div class="action-group special">
+                    <button class="btn btn-gradient" @click="runTestMission"
+                        :disabled="!isArmed && flightPhase !== 'IDLE'">
+                        <i class="fas fa-rocket"></i> 执行全自动测试任务
+                    </button>
+                </div>
+            </section>
+        </main>
+    </div>
+    {% endraw %}
+
+    <script src="/static/js/webrtc_player.js"></script>
+    <script>
+        const { createApp, ref, onMounted, computed } = Vue;
+
+        createApp({
+            setup() {
+                const position = ref({ x: 0, y: 0, z: 0, yaw: 0, lat: 0, lon: 0, battery: 1.0 });
+                const currentAlt = ref(0.0);
+                const currentMode = ref('MANUAL');
+                const flightPhase = ref('IDLE');
+                const isArmed = ref(false);
+                const logs = ref([]);
+                const takeoffHeight = ref(5.0);
+                const videoPlaying = ref(false);
+                const videoStatus = ref('Disconnected');
+
+                // WebSocket Connection
+                const connectWebSocket = () => {
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const ws = new WebSocket(`${protocol}//${window.location.host}/api/ws/status`);
+
+                    ws.onopen = () => console.log("WebSocket Connected");
+                    ws.onmessage = (event) => {
+                        const data = JSON.parse(event.data);
+                        // Update state
+                        currentMode.value = data.mode;
+                        flightPhase.value = data.flight_phase;
+                        isArmed.value = data.armed; // Make sure backend allows boolean
+                        position.value = {
+                            ...data.position,
+                            lat: 47.3979711 + (data.position.y * 0.00000899),
+                            lon: 8.5461637 + (data.position.x * 0.00001141),
+                            battery: data.battery
+                        };
+                        currentAlt.value = data.position.z;
+                    };
+                    ws.onclose = () => setTimeout(connectWebSocket, 1000);
+                };
+
+                onMounted(() => {
+                    connectWebSocket();
+                    addLog("系统初始化完成");
+                });
+
+                const addLog = (msg) => {
+                    const time = new Date().toLocaleTimeString();
+                    logs.value.unshift({ time, msg });
+                    if (logs.value.length > 50) logs.value.pop();
+                };
+
+                // Commands
+                const sendCommand = async (cmd) => {
+                    addLog(`发送指令: ${cmd}...`);
+                    try {
+                        const res = await fetch(`/api/${cmd}`, { method: 'POST' });
+                        const data = await res.json();
+                        if (data.success) addLog(`成功: ${cmd}`);
+                        else addLog(`失败: ${data.message}`);
+                    } catch (e) {
+                        addLog(`错误: ${e.message}`);
+                    }
+                };
+
+                const takeoff = async () => {
+                    addLog(`请求起飞至 ${takeoffHeight.value}米...`);
+                    try {
+                        const res = await fetch(`/api/takeoff?height=${takeoffHeight.value}`, { method: 'POST' });
+                        const data = await res.json();
+                        if (data.success) addLog(`起飞指令已发送`);
+                        else addLog(`拒绝: ${data.message}`);
+                    } catch (e) {
+                        addLog(`错误: ${e.message}`);
+                    }
+                };
+
+                const runTestMission = async () => {
+                    addLog(`开始执行全自动测试任务 (取货 -> 送货)...`);
+                    try {
+                        const res = await fetch(`/api/test_mission`, { method: 'POST' });
+                        const data = await res.json();
+                        if (data.success) addLog(`任务已在后台启动`);
+                        else addLog(`任务启动失败: ${data.message}`);
+                    } catch (e) {
+                        addLog(`错误: ${e.message}`);
+                    }
+                };
+
+                // Video
+                const startVideo = async () => {
+                    videoStatus.value = '连接中...';
+                    try {
+                        await startWebRTC();
+                        videoPlaying.value = true;
+                        videoStatus.value = 'Connected';
+                        addLog("图传连接成功");
+                    } catch (e) {
+                        videoStatus.value = '连接失败';
+                        videoPlaying.value = false;
+                        addLog(`图传错误: ${e}`);
+                    }
+                };
+
+                const getBatteryColor = (level) => {
+                    if (level > 0.6) return '#4ade80'; // Green
+                    if (level > 0.3) return '#facc15'; // Yellow
+                    return '#ef4444'; // Red
+                };
+
+                const flightPhaseCN = computed(() => {
+                    const map = {
+                        'IDLE': '待机中',
+                        'TAKING_OFF': '起飞中',
+                        'LANDING': '降落中',
+                        'HOVER': '悬停',
+                        'MOVING': '飞行中',
+                        'RETURNING': '返航中'
+                    };
+                    return map[flightPhase.value] || flightPhase.value;
+                });
+
+                return {
+                    position, currentAlt, currentMode, flightPhase, isArmed, flightPhaseCN,
+                    logs, takeoffHeight, videoPlaying, videoStatus,
+                    sendCommand, takeoff, startVideo, runTestMission,
+                    getBatteryColor
+                };
+            }
+        }).mount('#dashboard-app');
+    </script>
+</body>
+
+</html>

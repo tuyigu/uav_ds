@@ -101,6 +101,8 @@ class SelfHealth:
     LOW_BATTERY: float = 0.25
 
     def is_battery_critical(self) -> bool:
+        if self.battery_level <= 0.001: # Ignore uninitialized/zero battery
+             return False
         return self.battery_level < self.CRITICAL_BATTERY
 
     def is_battery_low(self) -> bool:

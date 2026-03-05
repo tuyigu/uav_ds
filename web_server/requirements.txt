@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+jinja2
+grpcio
+grpcio-tools
+protobuf
+aiohttp
+aiortc
+opencv-python
+av
+numpy
+websockets
