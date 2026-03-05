@@ -58,3 +58,10 @@ yarn-error.log*
 # OS / Temporary
 *~
 #*#
+
+# Personal / Documents
+简历*
+Resume*
+TODO.md
+IMPLEMENTATION_STRATEGY.md
+

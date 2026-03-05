@@ -37,10 +37,7 @@ BT::NodeStatus FollowPathAction::onRunning()
         MoveTo::Goal goal;
         goal.x = wp.x;
         goal.y = wp.y;
-        goal.z = wp.z; // assuming z is correct (flight core expects positive Z usually, or NED? check flight_core)
-        // flight_core expects NED Z (negative for up) or ENU Z (positive)?
-        // Checking flight_core.cpp... it usually expects ENU because of ROS 2 standards and converts to PX4 NED internally.
-        // But let's assume strict ENU.
+        goal.z = wp.z; // flight_core expects ENU (positive Z = up), converts to PX4 NED internally via px4_interface
         goal.yaw = 0.0; // TODO: compute yaw based on path direction
 
         RCLCPP_INFO(node_->get_logger(), "FollowPath: Moving to WP %zu/%zu: (%.1f, %.1f, %.1f)", 

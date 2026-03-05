@@ -20,6 +20,7 @@ class ArucoDetector(Node):
         # Parameters
         self.declare_parameter('aruco_dict', 'DICT_4X4_50')
         self.declare_parameter('marker_size', 0.2) # meters
+        self.marker_size = self.get_parameter('marker_size').value
         
         # TF Buffer
         self.tf_buffer = tf2_ros.Buffer()
@@ -82,20 +83,30 @@ class ArucoDetector(Node):
         marker_viz = MarkerArray()
 
         if ids is not None:
-            # Estimate pose
-            rvecs, tvecs, _ = aruco.estimatePoseSingleMarkers(corners, 0.2, self.camera_matrix, self.dist_coeffs)
+            # Estimate pose using solvePnP since estimatePoseSingleMarkers was removed in OpenCV 4.7+
+            objPoints = np.array([
+                [-self.marker_size / 2,  self.marker_size / 2, 0],
+                [ self.marker_size / 2,  self.marker_size / 2, 0],
+                [ self.marker_size / 2, -self.marker_size / 2, 0],
+                [-self.marker_size / 2, -self.marker_size / 2, 0]
+            ], dtype=np.float32)
             
             for i in range(len(ids)):
+                corners_i = corners[i][0]
+                success, rvec, tvec = cv2.solvePnP(objPoints, corners_i, self.camera_matrix, self.dist_coeffs, flags=cv2.SOLVEPNP_IPPE_SQUARE)
+                if not success:
+                    continue
+
                 # Draw axis for debug
-                cv2.drawFrameAxes(cv_image, self.camera_matrix, self.dist_coeffs, rvecs[i], tvecs[i], 0.1)
+                cv2.drawFrameAxes(cv_image, self.camera_matrix, self.dist_coeffs, rvec, tvec, 0.1)
                 
                 try:
                     # Create PoseStamped for the marker in camera frame
                     p_cam = PoseStamped()
                     p_cam.header = msg.header
-                    p_cam.pose.position.x = tvecs[i][0][0]
-                    p_cam.pose.position.y = tvecs[i][0][1]
-                    p_cam.pose.position.z = tvecs[i][0][2]
+                    p_cam.pose.position.x = float(tvec[0][0])
+                    p_cam.pose.position.y = float(tvec[1][0])
+                    p_cam.pose.position.z = float(tvec[2][0])
                     
                     # Convert rotation vector to quaternion
                     rot_mat, _ = cv2.Rodrigues(rvecs[i])

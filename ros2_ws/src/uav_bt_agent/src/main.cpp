@@ -33,11 +33,12 @@ public:
             
         battery_sub_ = this->create_subscription<flight_core::msg::UavState>(
             "/flight/uav_state", 10,
-            // [修复] 必须改回按值传递 SharedPtr，否则会破坏 rclcpp 模板推导
             [this](flight_core::msg::UavState::SharedPtr msg) {
                 last_state_ = msg;
             });
 
+        // Initialize intent timestamp tracking for LinkLoss detection
+        last_intent_time_ = this->get_clock()->now();
     }
 
     void init()
@@ -96,6 +97,14 @@ public:
         factory_.registerSimpleCondition("IsMarkerVisible", [&](BT::TreeNode&) {
             return BT::NodeStatus::SUCCESS;
         }, {BT::InputPort<int>("marker_id")});
+
+        // LinkLoss detection: checks if orchestrator intent is recent
+        factory_.registerSimpleCondition("IsLinkAlive", [&](BT::TreeNode& node) {
+            auto timeout = node.getInput<float>("timeout");
+            if (!timeout) return BT::NodeStatus::SUCCESS;
+            double elapsed = (this->get_clock()->now() - last_intent_time_).seconds();
+            return (elapsed < timeout.value()) ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
+        }, {BT::InputPort<float>("timeout")});
 
         factory_.registerSimpleCondition("IsPathClear", [&](BT::TreeNode&) {
             return BT::NodeStatus::SUCCESS;
@@ -174,6 +183,12 @@ public:
             bb->set("home_y", 0.0f);
 
             bb->set("battery_min", 0.15f);
+            bb->set("battery_low", 0.20f);       // 20% → RETURN_HOME
+            bb->set("battery_critical", 0.10f);   // 10% → ABORT (emergency land)
+
+            // LinkLoss timeouts
+            bb->set("link_timeout_hold", 10.0f);   // 10s → HOLD
+            bb->set("link_timeout_rtl", 30.0f);    // 30s → RETURN_HOME
 
             groot_publisher_ = std::make_unique<BT::Groot2Publisher>(tree_);
             RCLCPP_INFO(this->get_logger(), "Groot2 Publisher started on port 1667");
@@ -232,6 +247,9 @@ public:
 
         current_mission_id_ = msg->mission_id;
 
+        // Update link keepalive timestamp
+        last_intent_time_ = this->get_clock()->now();
+
         if (msg->intent == "DELIVER" || msg->intent == "RETURN_HOME" || msg->intent == "REROUTE") {
             current_intent_ = msg->intent;
             if (!is_running_) {
@@ -275,6 +293,7 @@ private:
     rclcpp::Publisher<uav_web_agent::msg::MissionStatus>::SharedPtr status_pub_;
     rclcpp::Subscription<flight_core::msg::UavState>::SharedPtr battery_sub_;
     flight_core::msg::UavState::SharedPtr last_state_;
+    rclcpp::Time last_intent_time_;
 };
 
 int main(int argc, char** argv)

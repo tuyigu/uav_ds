@@ -40,13 +40,61 @@
 
   <!-- ============================================================ -->
   <!-- SELF-HEALTH CHECK (every tick)                                -->
-  <!-- If any check fails → whole ReactiveSequence aborts mission   -->
+  <!-- Multi-level battery failsafe + SLAM health                   -->
+  <!--                                                               -->
+  <!-- Priority (checked top-to-bottom):                             -->
+  <!--   1. CRITICAL battery (<10%) → Emergency Land (ABORT)         -->
+  <!--   2. LOW battery (<20%) → Return Home                         -->
+  <!--   3. SLAM health → Abort if unhealthy                         -->
   <!-- ============================================================ -->
   <BehaviorTree ID="SelfHealthCheck">
-    <Parallel success_count="2" failure_count="1">
-      <IsBatteryOk threshold="{battery_min}" />
+    <Sequence>
+
+      <!-- Check 1: CRITICAL battery → force ABORT intent -->
+      <Fallback>
+        <IsBatteryOk threshold="{battery_critical}" />
+        <Sequence>
+          <EchoAction message="🔴 CRITICAL BATTERY! Forcing emergency land..." />
+          <PublishStatusAction status="BATTERY_CRITICAL" reason="Battery critically low, emergency landing" />
+          <SetBlackboard output_key="intent" value="ABORT" />
+        </Sequence>
+      </Fallback>
+
+      <!-- Check 2: LOW battery → force RETURN_HOME intent -->
+      <Fallback>
+        <IsBatteryOk threshold="{battery_low}" />
+        <Sequence>
+          <EchoAction message="🟡 LOW BATTERY! Returning home..." />
+          <PublishStatusAction status="BATTERY_LOW" reason="Battery low, returning to home" />
+          <SetBlackboard output_key="intent" value="RETURN_HOME" />
+        </Sequence>
+      </Fallback>
+
+      <!-- Check 3: SLAM health -->
       <IsSlamHealthy />
-    </Parallel>
+
+      <!-- Check 4: LinkLoss — orchestrator communication timeout -->
+      <!-- 30s without intent → RETURN_HOME -->
+      <Fallback>
+        <IsLinkAlive timeout="{link_timeout_rtl}" />
+        <Sequence>
+          <EchoAction message="🔴 LINK LOST (30s)! Returning home..." />
+          <PublishStatusAction status="LINK_LOST" reason="No intent for 30s, returning home" />
+          <SetBlackboard output_key="intent" value="RETURN_HOME" />
+        </Sequence>
+      </Fallback>
+
+      <!-- 10s without intent → HOLD (hover in place as early warning) -->
+      <Fallback>
+        <IsLinkAlive timeout="{link_timeout_hold}" />
+        <Sequence>
+          <EchoAction message="🟡 LINK DEGRADED (10s)! Holding position..." />
+          <PublishStatusAction status="LINK_DEGRADED" reason="No intent for 10s, holding" />
+          <SetBlackboard output_key="intent" value="HOLD" />
+        </Sequence>
+      </Fallback>
+
+    </Sequence>
   </BehaviorTree>
 
   <!-- ============================================================ -->
@@ -71,8 +119,11 @@
                goal_x="{dest_x}" goal_y="{dest_y}"
                from_z="{cruise_alt}" to_z="{search_alt}" />
 
-      <!-- Phase 4: RESERVED (Was PlannedApproach) -->
-      <!-- <SubTree ID="Phase_PlannedApproach" _autoremap="true" ... /> -->
+      <!-- Phase 4: A* Planned Approach (optional, graceful fallthrough on failure) -->
+      <ForceSuccess>
+        <SubTree ID="Phase_PlannedApproach" _autoremap="true"
+                 goal_x="{dest_x}" goal_y="{dest_y}" goal_z="{search_alt}" />
+      </ForceSuccess>
 
       <!-- Phase 5: Search + Precision Land (search_alt → ground) -->
       <SubTree ID="Phase_PrecisionLand" _autoremap="true" />
@@ -192,6 +243,7 @@
 
       <PlanPathAction
         goal_x="{goal_x}" goal_y="{goal_y}" goal_z="{goal_z}"
+        start_x="{current_x}" start_y="{current_y}" start_z="{current_z}"
         waypoints="{planned_path}" />
 
       <ReactiveSequence>

@@ -22,6 +22,9 @@ public:
             BT::InputPort<float>("goal_x"),
             BT::InputPort<float>("goal_y"),
             BT::InputPort<float>("goal_z"),
+            BT::InputPort<float>("start_x", 0.0f, "Start X (0 = use current pos)"),
+            BT::InputPort<float>("start_y", 0.0f, "Start Y (0 = use current pos)"),
+            BT::InputPort<float>("start_z", 0.0f, "Start Z (0 = use current pos)"),
             BT::OutputPort<std::vector<geometry_msgs::msg::Point>>("waypoints")
         };
     }

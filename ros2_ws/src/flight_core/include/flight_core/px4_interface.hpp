@@ -44,7 +44,8 @@ namespace flight_core {
         rclcpp::Subscription<px4_msgs::msg::VehicleLocalPosition>::SharedPtr pos_sub_;
         rclcpp::Subscription<px4_msgs::msg::BatteryStatus>::SharedPtr battery_sub_;
 
-        CurrentState current_state_;
+        mutable std::mutex state_mutex_;
+        CurrentState current_state_{};
     };
 
 }  // namespace flight_core

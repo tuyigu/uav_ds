@@ -1,5 +1,6 @@
 #!/usr/bin/env zsh
-
+export QT_QPA_PLATFORM=xcb
+export GDK_BACKEND=x11
 # Configuration
 WORKSPACE_DIR="$HOME/Dev/Robotics/workspaces/uav_ds"
 PX4_DIR="$HOME/Dev/Robotics/firmwares/PX4-Autopilot"

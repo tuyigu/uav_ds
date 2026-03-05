@@ -125,17 +125,32 @@ class OrchestratorNodeV2(Node):
             self._ac_land.wait_for_server(timeout_sec=1.0)
             self._ac_land.send_goal_async(goal_msg)
 
+        elif cmd_type == "PAUSE":
+            self.intent_engine.pause()
+
+        elif cmd_type == "RESUME":
+            self.intent_engine.resume()
+
+        elif cmd_type == "CANCEL":
+            self.intent_engine.abort()
+
         elif cmd_type == "START_MISSION":
-            # Just a test mission for now
-            tasks = [
-                Task("TAKEOFF", {"height": 5.0}),
-                Task("GOTO", {"x": 0.0, "y": 10.0, "z": 5.0}),
-                Task("LAND"),
-                Task("TAKEOFF", {"height": 5.0}),
-                Task("RETURN_HOME"),
-                Task("LAND")
-            ]
-            self.intent_engine.load_mission("TEST_MISSION", tasks)
+            mission_tasks = data.get('tasks', None)
+            if mission_tasks:
+                # Accept external task list from gRPC
+                tasks = [Task(t['type'], t.get('params', {})) for t in mission_tasks]
+                self.intent_engine.load_mission(data.get('mission_id', 'MISSION'), tasks)
+            else:
+                # Default test mission
+                tasks = [
+                    Task("TAKEOFF", {"height": 5.0}),
+                    Task("GOTO", {"x": 0.0, "y": 10.0, "z": 5.0}),
+                    Task("LAND"),
+                    Task("TAKEOFF", {"height": 5.0}),
+                    Task("RETURN_HOME"),
+                    Task("LAND")
+                ]
+                self.intent_engine.load_mission("TEST_MISSION", tasks)
 
     def destroy_node(self):
         self.grpc_server.stop()

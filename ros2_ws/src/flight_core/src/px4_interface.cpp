@@ -17,6 +17,7 @@ PX4Interface::PX4Interface(rclcpp::Node* node) : node_(node) {
         [this](const VehicleLocalPosition::SharedPtr msg) {
             // 只有当数据有效时才更新，并转换为 ENU (ROS 标准)
             if (msg->xy_valid && msg->z_valid) {
+                std::lock_guard<std::mutex> lock(state_mutex_);
                 // NED -> ENU 转换
                 // NED X (North) -> ENU Y
                 // NED Y (East) -> ENU X
@@ -31,6 +32,7 @@ PX4Interface::PX4Interface(rclcpp::Node* node) : node_(node) {
     battery_sub_ = node_->create_subscription<BatteryStatus>(
         "/fmu/out/battery_status", qos,
         [this](const BatteryStatus::SharedPtr msg) {
+            std::lock_guard<std::mutex> lock(state_mutex_);
             current_state_.battery = msg->remaining;
         });
 }
@@ -112,7 +114,10 @@ void PX4Interface::send_vehicle_command(uint16_t command, float param1, float pa
     cmd_pub_->publish(msg);
 }
 
-CurrentState PX4Interface::get_state() const { return current_state_; }
+CurrentState PX4Interface::get_state() const { 
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    return current_state_; 
+}
 
 }  // namespace flight_core
 

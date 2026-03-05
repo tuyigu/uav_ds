@@ -143,14 +143,13 @@ void FlightCore::execute_takeoff(
     const std::shared_ptr<GoalHandleTakeoff> goal_handle)
 {
     const auto goal = goal_handle->get_goal();
-    auto feedback = std::make_shared<Takeoff::Feedback>();
-    auto result   = std::make_shared<Takeoff::Result>();
 
     auto current = px4_.get_state();
     if (!current.connected) {
-        result->success = false;
-        result->message = "PX4 未连接，起飞中止";
-        goal_handle->abort(result);
+        auto abort_res = std::make_shared<Takeoff::Result>();
+        abort_res->success = false;
+        abort_res->message = "PX4 未连接，起飞中止";
+        goal_handle->abort(abort_res);
         return;
     }
 
@@ -159,9 +158,10 @@ void FlightCore::execute_takeoff(
 
         // 尝试在状态机中触发起飞
         if (!fsm_.trigger_takeoff(goal->height, current.x, current.y)) {
-            result->success = false;
-            result->message = "状态机 (FSM) 拒绝了起飞操作";
-            goal_handle->abort(result);
+            auto abort_res = std::make_shared<Takeoff::Result>();
+            abort_res->success = false;
+            abort_res->message = "状态机 (FSM) 拒绝了起飞操作";
+            goal_handle->abort(abort_res);
             return;
         }
 
@@ -181,22 +181,22 @@ void FlightCore::execute_takeoff(
         }
 
         // 发布进度反馈
+        auto feedback = std::make_shared<Takeoff::Feedback>();
         feedback->current_z = static_cast<float>(current.z);
         feedback->phase     = phase_to_string(phase);
         goal_handle->publish_feedback(feedback);
 
         // 如果状态机切入 HOLDING，说明已经达到目标起飞高度
         if (phase == FlightPhase::HOLDING) {
-            result->success = true;
-            result->message = "起飞成功，进入悬停模式";
-            goal_handle->succeed(result);
+            auto succ_res = std::make_shared<Takeoff::Result>();
+            succ_res->success = true;
+            succ_res->message = "起飞成功，进入悬停模式";
+            goal_handle->succeed(succ_res);
             return;
         }
 
         // 处理 Goal 被外部强制 Abort 的情况
         if (!goal_handle->is_active()) {
-            result->success = false;
-            result->message = "起飞动作被中断";
             return;
         }
 
@@ -204,9 +204,8 @@ void FlightCore::execute_takeoff(
     }
 
     // 节点关闭时的异常退出
-    result->success = false;
-    result->message = "ROS 节点正在关闭";
-    goal_handle->abort(result);
+    // 取消了不再这里自动 abort() 减少不必要的并发冲突
+
 }
 
 // ======================================================================================
@@ -249,15 +248,13 @@ void FlightCore::handle_land_accepted(
 void FlightCore::execute_land(
     const std::shared_ptr<GoalHandleLand> goal_handle)
 {
-    auto feedback = std::make_shared<Land::Feedback>();
-    auto result   = std::make_shared<Land::Result>();
-
     {
         std::lock_guard<std::mutex> lock(fsm_mutex_);
         if (!fsm_.trigger_land()) {
-            result->success = false;
-            result->message = "状态机 (FSM) 拒绝了降落操作";
-            goal_handle->abort(result);
+            auto abort_res = std::make_shared<Land::Result>();
+            abort_res->success = false;
+            abort_res->message = "状态机 (FSM) 拒绝了降落操作";
+            goal_handle->abort(abort_res);
             return;
         }
 
@@ -275,12 +272,14 @@ void FlightCore::execute_land(
             phase = fsm_.phase();
         }
 
+        auto feedback = std::make_shared<Land::Feedback>();
         feedback->current_z = static_cast<float>(current.z);
         feedback->phase     = phase_to_string(phase);
         goal_handle->publish_feedback(feedback);
 
         // 如果状态变为 LANDED，说明飞机已经触地并自动上锁 (Disarm)
         if (phase == FlightPhase::LANDED) {
+            auto result = std::make_shared<Land::Result>();
             result->success = true;
             result->message = "降落成功";
             goal_handle->succeed(result);
@@ -288,17 +287,13 @@ void FlightCore::execute_land(
         }
 
         if (!goal_handle->is_active()) {
-            result->success = false;
-            result->message = "降落动作被中断";
             return;
         }
 
         rate.sleep();
     }
 
-    result->success = false;
-    result->message = "ROS 节点正在关闭";
-    goal_handle->abort(result);
+    // 关闭时不在这里 abort
 }
 
 // ======================================================================================
@@ -338,13 +333,9 @@ void FlightCore::handle_move_accepted(
 {
     {
         std::lock_guard<std::mutex> lock(fsm_mutex_);
-        // 如果当前有正在执行的移动任务，进行抢占 (Preempt)
         if (current_move_goal_handle_ && current_move_goal_handle_->is_active()) {
             RCLCPP_INFO(get_logger(), "中止旧的 MoveTo 任务，执行新目标...");
-            auto result = std::make_shared<MoveTo::Result>();
-            result->success = false;
-            result->message = "被新的移动目标抢占";
-            current_move_goal_handle_->abort(result);
+            // Let the executing thread handle its own abortion.
         }
         current_move_goal_handle_ = goal_handle;
     }
@@ -356,8 +347,6 @@ void FlightCore::execute_move(
     const std::shared_ptr<GoalHandleMoveTo> goal_handle)
 {
     const auto goal = goal_handle->get_goal();
-    auto feedback = std::make_shared<MoveTo::Feedback>();
-    auto result   = std::make_shared<MoveTo::Result>();
 
     RCLCPP_INFO(get_logger(), "开始执行 MoveTo: 目标点(%.2f, %.2f, %.2f, yaw=%.2f)",
                 goal->x, goal->y, goal->z, goal->yaw);
@@ -365,9 +354,10 @@ void FlightCore::execute_move(
     {
         std::lock_guard<std::mutex> lock(fsm_mutex_);
         if (!fsm_.trigger_move(goal->x, goal->y, goal->z, goal->yaw)) {
-            result->success = false;
-            result->message = "状态机 (FSM) 拒绝了移动请求";
-            goal_handle->abort(result);
+            auto abort_res = std::make_shared<MoveTo::Result>();
+            abort_res->success = false;
+            abort_res->message = "状态机 (FSM) 拒绝了移动请求";
+            goal_handle->abort(abort_res);
             return;
         }
     }
@@ -377,6 +367,18 @@ void FlightCore::execute_move(
     while (rclcpp::ok()) {
         if (!goal_handle->is_active()) {
             return; // 任务已被终止（如被抢占）
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(fsm_mutex_);
+            if (current_move_goal_handle_ != goal_handle) {
+                // 被新的移动目标抢占，由当前执行线程自行安全中止目标
+                auto result = std::make_shared<MoveTo::Result>();
+                result->success = false;
+                result->message = "被新的移动目标抢占";
+                goal_handle->abort(result);
+                return;
+            }
         }
 
         // 处理客户端发起的取消请求
@@ -389,8 +391,9 @@ void FlightCore::execute_move(
             RCLCPP_INFO(get_logger(),
                         "MoveTo 已取消: 无人机正在 (%.2f, %.2f, %.2f) 处刹车悬停",
                         current.x, current.y, current.z);
-            result->success = false;
-            goal_handle->canceled(result);
+            auto cancel_res = std::make_shared<MoveTo::Result>();
+            cancel_res->success = false;
+            goal_handle->canceled(cancel_res);
             return;
         }
 
@@ -410,6 +413,7 @@ void FlightCore::execute_move(
         }
 
         // 发布距离反馈
+        auto feedback = std::make_shared<MoveTo::Feedback>();
         feedback->current_x = current.x;
         feedback->current_y = current.y;
         feedback->current_z = current.z;
@@ -419,17 +423,16 @@ void FlightCore::execute_move(
         // 到达目标点，状态机自动切回 HOLDING
         if (phase == FlightPhase::HOLDING) {
             RCLCPP_INFO(get_logger(), "MoveTo 抵达目标点");
-            result->success = true;
-            goal_handle->succeed(result);
+            auto succ_res = std::make_shared<MoveTo::Result>();
+            succ_res->success = true;
+            goal_handle->succeed(succ_res);
             return;
         }
 
         rate.sleep();
     }
 
-    result->success = false;
-    result->message = "ROS 节点正在关闭";
-    goal_handle->abort(result);
+    // 取消 ROS 节点关闭时的 abort
 }
 
 // ======================================================================================

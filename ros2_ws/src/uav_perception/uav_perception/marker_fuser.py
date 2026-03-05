@@ -5,6 +5,7 @@ Marker Fuser Node — Height-aware YOLO ↔ ArUco fusion.
 Strategy:
   - Height > switch_altitude (default 5m): Use YOLO bbox center → estimate map position
   - Height ≤ switch_altitude:              Use ArUco pose (cm-level precision)
+  - Hysteresis band (±1m) to prevent flickering near switch altitude
 
 Output: /perception/landing_target (LandingTarget msg)
   Downstream consumers (SearchMarkerAction, PrecisionLandAction) don't need
@@ -28,12 +29,16 @@ class MarkerFuserNode(Node):
 
         # Parameters
         self.declare_parameter('switch_altitude', 5.0)
+        self.declare_parameter('hysteresis', 1.0)        # ±1m band to prevent flickering
         self.declare_parameter('target_class', 'armor')
         self.declare_parameter('min_yolo_confidence', 0.4)
+        self.declare_parameter('target_marker_id', -1)    # -1 = accept any marker
 
         self.switch_alt = self.get_parameter('switch_altitude').value
+        self.hysteresis = self.get_parameter('hysteresis').value
         self.target_class = self.get_parameter('target_class').value
         self.min_yolo_conf = self.get_parameter('min_yolo_confidence').value
+        self.target_marker_id = self.get_parameter('target_marker_id').value
 
         # State
         self.current_height = 0.0  # AGL (above ground level)
@@ -43,6 +48,9 @@ class MarkerFuserNode(Node):
         self.camera_fov_v = math.radians(48.8)  # Vertical FOV
         self.image_width = 640
         self.image_height = 480
+
+        # Source tracking with hysteresis
+        self.active_source = 'none'  # 'yolo', 'aruco', or 'none'
 
         # Last known targets (for smoothing / fallback)
         self.last_aruco_target = None
@@ -62,13 +70,28 @@ class MarkerFuserNode(Node):
 
         self.get_logger().info(
             f'Marker Fuser ready (switch_alt={self.switch_alt}m, '
-            f'target_class={self.target_class})')
+            f'hysteresis=±{self.hysteresis}m, target_class={self.target_class}, '
+            f'target_marker_id={self.target_marker_id})')
+
+    def _should_use_aruco(self) -> bool:
+        """Determine if ArUco should be the active source, with hysteresis.
+        
+        Hysteresis prevents flickering near the switch altitude:
+        - Switch from YOLO → ArUco when descending below (switch_alt - hysteresis)
+        - Switch from ArUco → YOLO when ascending above (switch_alt + hysteresis)
+        """
+        if self.active_source == 'aruco':
+            # Currently using ArUco — stay with ArUco unless significantly above switch alt
+            return self.current_height <= (self.switch_alt + self.hysteresis)
+        else:
+            # Currently using YOLO or none — switch to ArUco only when clearly below switch alt
+            return self.current_height <= (self.switch_alt - self.hysteresis)
 
     def _on_uav_state(self, msg: UavState):
         """Update current drone position."""
         self.current_x = msg.x
         self.current_y = msg.y
-        # Height AGL: we use absolute Z (NED → positive up convention)
+        # Height AGL: we use absolute Z (ENU convention, positive up)
         self.current_height = abs(msg.z)
 
     def _on_aruco(self, msg: ArucoMarkers):
@@ -76,8 +99,18 @@ class MarkerFuserNode(Node):
         if not msg.markers:
             return
 
-        # Use first detected marker (could filter by ID later)
-        marker = msg.markers[0]
+        # Filter by target marker ID if specified
+        marker = None
+        if self.target_marker_id >= 0:
+            for m in msg.markers:
+                if m.marker_id == self.target_marker_id:
+                    marker = m
+                    break
+            if marker is None:
+                return  # Target marker not found in this frame
+        else:
+            # Use first detected marker
+            marker = msg.markers[0]
 
         target = LandingTarget()
         target.header = msg.header
@@ -92,27 +125,37 @@ class MarkerFuserNode(Node):
 
         self.last_aruco_target = target
 
-        # Always publish ArUco if available AND we're low enough
-        # (even if YOLO is also publishing)
-        if self.current_height <= self.switch_alt:
+        # Publish ArUco if conditions met (with hysteresis)
+        if self._should_use_aruco():
+            self.active_source = 'aruco'
             self.target_pub.publish(target)
             self.get_logger().debug(
-                f'ArUco target at ({marker.pose.position.x:.2f}, '
-                f'{marker.pose.position.y:.2f}), h={self.current_height:.1f}m')
+                f'ArUco target (id={marker.marker_id}) at '
+                f'({marker.pose.position.x:.2f}, {marker.pose.position.y:.2f}), '
+                f'h={self.current_height:.1f}m')
 
     def _on_yolo(self, msg: YoloDetections):
         """Process YOLO detections (coarse, high altitude)."""
         if not msg.detections:
             return
 
-        # Find best landing pad detection
+        # Find best landing pad detection, preferring target class
         best = None
+        best_is_target = False
         for det in msg.detections:
             if det.confidence < self.min_yolo_conf:
                 continue
-            # Accept target_class match OR any class if using COCO fallback
-            if best is None or det.confidence > best.confidence:
+            is_target = (det.class_name == self.target_class)
+            # Prefer target class over other classes
+            if best is None:
                 best = det
+                best_is_target = is_target
+            elif is_target and not best_is_target:
+                best = det
+                best_is_target = is_target
+            elif is_target == best_is_target and det.confidence > best.confidence:
+                best = det
+                best_is_target = is_target
 
         if best is None:
             return
@@ -138,12 +181,15 @@ class MarkerFuserNode(Node):
 
         self.last_yolo_target = target
 
-        # Only publish YOLO if we're high (ArUco not reliable at long range)
-        if self.current_height > self.switch_alt:
+        # Only publish YOLO if ArUco is not active (with hysteresis)
+        if not self._should_use_aruco():
+            self.active_source = 'yolo'
             self.target_pub.publish(target)
             self.get_logger().info(
                 f'YOLO target est. ({est_x:.2f}, {est_y:.2f}), '
-                f'conf={best.confidence:.2f}, h={self.current_height:.1f}m')
+                f'conf={best.confidence:.2f}, class={best.class_name}, '
+                f'h={self.current_height:.1f}m',
+                throttle_duration_sec=2.0)
 
     def _pixel_to_ground(self, px: int, py: int) -> tuple:
         """

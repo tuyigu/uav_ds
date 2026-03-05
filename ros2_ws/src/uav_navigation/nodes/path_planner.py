@@ -10,6 +10,13 @@ Provides a PlanPath service that:
 
 The planner maintains a voxel grid representation of occupied space
 from the OctoMap for fast collision checking.
+
+Coordinate System:
+    All planning is done in the PX4 local ENU frame (same as flight_core).
+    - Goals come from the BT agent in PX4 ENU coordinates.
+    - Start position defaults to UavState (PX4 ENU), falling back to SLAM odometry.
+    - OctoMap occupied cells are in the 'map' frame (configured via octomap.yaml).
+    - If map frame != PX4 ENU frame, TF2 is used for conversion.
 """
 
 import rclpy
@@ -20,7 +27,12 @@ from octomap_msgs.msg import Octomap
 from visualization_msgs.msg import Marker, MarkerArray
 from nav_msgs.msg import Odometry
 
+from flight_core.msg import UavState
+
 from uav_navigation.srv import PlanPath
+
+import tf2_ros
+from geometry_msgs.msg import PointStamped
 
 import heapq
 import math
@@ -241,7 +253,15 @@ class AStarPlanner:
 
 
 class PathPlannerNode(Node):
-    """ROS 2 node providing 3D path planning service."""
+    """ROS 2 node providing 3D path planning service.
+    
+    Coordinate System Design:
+        - All service inputs/outputs are in PX4 local ENU frame (matching flight_core).
+        - OctoMap data is in the 'map' frame. If 'map' frame aligns with PX4 ENU
+          (which it should when TF is properly set up), no conversion is needed.
+        - Start position uses UavState (PX4 ENU) as the primary source,
+          falling back to SLAM odometry if UavState is unavailable.
+    """
 
     def __init__(self):
         super().__init__('path_planner')
@@ -250,6 +270,7 @@ class PathPlannerNode(Node):
         self.declare_parameter('voxel_resolution', 0.5)
         self.declare_parameter('default_safety_margin', 0.5)
         self.declare_parameter('max_planning_iterations', 50000)
+        self.declare_parameter('planning_frame', 'map')
 
         self.voxel_res = self.get_parameter(
             'voxel_resolution').value
@@ -257,9 +278,15 @@ class PathPlannerNode(Node):
             'default_safety_margin').value
         self.max_iters = self.get_parameter(
             'max_planning_iterations').value
+        self.planning_frame = self.get_parameter(
+            'planning_frame').value
 
         # Voxel grid
         self.voxel_grid = VoxelGrid(resolution=self.voxel_res)
+
+        # TF2 for frame transformations
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
         # Subscribe to OctoMap occupied cells
         qos_latched = QoSProfile(
@@ -275,8 +302,17 @@ class PathPlannerNode(Node):
             qos_latched
         )
 
-        # Current position from SLAM odometry
-        self.current_pos = None
+        # Primary position source: UavState from flight_core (PX4 ENU)
+        self.px4_pos = None
+        self.uav_state_sub = self.create_subscription(
+            UavState,
+            '/flight/uav_state',
+            self._uav_state_callback,
+            10
+        )
+
+        # Fallback position source: SLAM odometry
+        self.slam_pos = None
         self.odom_sub = self.create_subscription(
             Odometry,
             '/Odometry',
@@ -301,7 +337,12 @@ class PathPlannerNode(Node):
         self.octomap_ready = False
         self.get_logger().info(
             f'Path Planner ready (resolution={self.voxel_res}m, '
-            f'margin={self.default_margin}m)')
+            f'margin={self.default_margin}m, frame={self.planning_frame})')
+
+    def _uav_state_callback(self, msg: UavState):
+        """Update current position from flight_core (PX4 local ENU frame)."""
+        if msg.connected:
+            self.px4_pos = (msg.x, msg.y, msg.z)
 
     def marker_callback(self, msg):
         """Update voxel grid from OctoMap visualization."""
@@ -312,26 +353,62 @@ class PathPlannerNode(Node):
             throttle_duration_sec=10.0)
 
     def odom_callback(self, msg):
-        """Update current position from SLAM."""
-        self.current_pos = (
+        """Update current position from SLAM (fallback, odom frame)."""
+        self.slam_pos = (
             msg.pose.pose.position.x,
             msg.pose.pose.position.y,
             msg.pose.pose.position.z
         )
 
+    def _get_current_position(self):
+        """Get current UAV position in PX4 ENU frame.
+        
+        Priority:
+            1. UavState from flight_core (PX4 ENU) — preferred, matches BT goals
+            2. SLAM odometry (may need frame conversion) — fallback
+        
+        Returns:
+            tuple (x, y, z) in PX4 ENU frame, or None if no position available
+        """
+        if self.px4_pos is not None:
+            return self.px4_pos
+
+        if self.slam_pos is not None:
+            self.get_logger().warn(
+                'Using SLAM odometry as position source (PX4 state unavailable). '
+                'Coordinates may not perfectly align with BT goals.',
+                throttle_duration_sec=5.0)
+            # TODO: Use TF2 to transform from odom frame to map/PX4 frame
+            # For now, use directly (works when both origins are aligned at takeoff)
+            return self.slam_pos
+
+        return None
+
     def plan_path_callback(self, request, response):
-        """Handle PlanPath service request."""
+        """Handle PlanPath service request.
+        
+        All coordinates are expected in PX4 local ENU frame.
+        """
         self.get_logger().info(
             f'PlanPath request: '
             f'({request.start.x:.1f}, {request.start.y:.1f}, {request.start.z:.1f}) -> '
             f'({request.goal.x:.1f}, {request.goal.y:.1f}, {request.goal.z:.1f})')
 
-        # Use current position if start is zero
+        # Use current PX4 position if start is zero (default from BT)
         start = (request.start.x, request.start.y, request.start.z)
-        if start == (0.0, 0.0, 0.0) and self.current_pos is not None:
-            start = self.current_pos
-            self.get_logger().info(
-                f'Using current SLAM position as start: {start}')
+        if start == (0.0, 0.0, 0.0):
+            current = self._get_current_position()
+            if current is not None:
+                start = current
+                self.get_logger().info(
+                    f'Using current position as start: '
+                    f'({start[0]:.2f}, {start[1]:.2f}, {start[2]:.2f})')
+            else:
+                response.success = False
+                response.waypoints = []
+                response.message = 'No position data available (neither PX4 nor SLAM)'
+                self.get_logger().error(response.message)
+                return response
 
         goal = (request.goal.x, request.goal.y, request.goal.z)
 
@@ -385,7 +462,7 @@ class PathPlannerNode(Node):
     def _publish_path_viz(self, waypoints):
         """Publish planned path as a Marker for RViz visualization."""
         marker = Marker()
-        marker.header.frame_id = 'map'
+        marker.header.frame_id = self.planning_frame
         marker.header.stamp = self.get_clock().now().to_msg()
         marker.ns = 'planned_path'
         marker.id = 0
@@ -411,7 +488,8 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':

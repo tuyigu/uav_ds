@@ -19,8 +19,16 @@ BT::NodeStatus PlanPathAction::onStart()
     request->goal.x = (double)goal_x;
     request->goal.y = (double)goal_y;
     request->goal.z = (double)goal_z;
-    // Start position will be handled by the service (using current odometry) if we leave it 0 or pass current pos.
-    // Ideally we should pass current pos here, but for now relying on service's odometry sub is easier.
+
+    // Pass start position from BT Blackboard (current_x/y/z from UavState).
+    // If (0,0,0), the service will use its own position tracking.
+    float start_x = 0.0f, start_y = 0.0f, start_z = 0.0f;
+    getInput("start_x", start_x);
+    getInput("start_y", start_y);
+    getInput("start_z", start_z);
+    request->start.x = (double)start_x;
+    request->start.y = (double)start_y;
+    request->start.z = (double)start_z;
 
     RCLCPP_INFO(node_->get_logger(), "Planning path to (%.1f, %.1f, %.1f)...", goal_x, goal_y, goal_z);
 
