@@ -8,6 +8,7 @@
 #include "uav_bt_agent/plugins/action/move_to_action.hpp"
 #include "uav_bt_agent/plugins/action/plan_path_action.hpp"
 #include "uav_bt_agent/plugins/action/follow_path_action.hpp"
+#include "uav_bt_agent/plugins/action/approach_action.hpp"
 #include "uav_bt_agent/plugins/action/search_marker_action.hpp"
 #include "uav_bt_agent/plugins/action/precision_land_action.hpp"
 
@@ -159,6 +160,11 @@ public:
             factory_.registerBuilder<PrecisionLandAction>("PrecisionLandAction",
                 [node_ptr](const std::string& name, const BT::NodeConfig& config) {
                 return std::make_unique<PrecisionLandAction>(name, config, node_ptr);
+            });
+            // v2: combined plan+follow node (replaces PlanPathAction+FollowPathAction sequence)
+            factory_.registerBuilder<ApproachAction>("ApproachAction",
+                [node_ptr](const std::string& name, const BT::NodeConfig& config) {
+                return std::make_unique<ApproachAction>(name, config, node_ptr);
             });
 
             tree_ = factory_.createTreeFromFile(xml_path);

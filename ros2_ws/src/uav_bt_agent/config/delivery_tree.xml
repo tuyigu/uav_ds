@@ -232,27 +232,28 @@
   </BehaviorTree>
 
   <!-- ============================================================ -->
-  <!-- PHASE 4: A* PLANNED APPROACH                                  -->
-  <!-- Sensors: SLAM primary + OctoMap active avoidance              -->
-  <!-- Navigation: Full A* path planning (low altitude = obstacles)  -->
-  <!-- Speed: Slow                                                   -->
+  <!-- PHASE 4: A* PLANNED APPROACH (v2)                            -->
+  <!-- Uses ApproachAction: PlanPath Service + FollowPath Action    -->
+  <!-- combined into one atomic BT node.                            -->
+  <!-- ReactiveFallback: if path becomes blocked, re-plan.          -->
   <!-- ============================================================ -->
   <BehaviorTree ID="Phase_PlannedApproach">
     <Sequence>
       <PublishStatusAction status="APPROACHING" />
 
-      <PlanPathAction
-        goal_x="{goal_x}" goal_y="{goal_y}" goal_z="{goal_z}"
-        start_x="{current_x}" start_y="{current_y}" start_z="{current_z}"
-        waypoints="{planned_path}" />
-
+      <!-- ApproachAction: calls A* internally, then drives FollowPath -->
+      <!-- On external obstacle detection (IsPathClear fails),         -->
+      <!-- the ReactiveSequence will halt ApproachAction → re-plan.    -->
       <ReactiveSequence>
         <IsPathClear path="{planned_path}" />
-        <!-- FollowPath logic is internal, assumes tight following. 
-             If we want loose following, we'd need to modify FollowPathAction too. 
-             For now, keep as is, but maybe wrap in Retry? -->
-        <RetryUntilSuccessful num_attempts="2">
-             <FollowPathAction waypoints="{planned_path}" />
+        <RetryUntilSuccessful num_attempts="3">
+          <ApproachAction
+            goal_x="{goal_x}" goal_y="{goal_y}" goal_z="{goal_z}"
+            start_x="{current_x}" start_y="{current_y}" start_z="{current_z}"
+            v_max="1.5" j_max="2.0"
+            final_x="{approach_final_x}"
+            final_y="{approach_final_y}"
+            final_z="{approach_final_z}" />
         </RetryUntilSuccessful>
       </ReactiveSequence>
 

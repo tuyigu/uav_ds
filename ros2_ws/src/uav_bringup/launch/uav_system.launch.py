@@ -131,10 +131,11 @@ def generate_launch_description():
     )
     delayed_nav = TimerAction(period=20.0, actions=[nav_launch])
 
-    # 9. FlightCore FSM (action servers: takeoff/land/move_to)
+    # 9. FlightCore V2 — 50Hz single-loop, B-spline+S-curve trajectory
+    #    Action servers: /motion/takeoff, land, move_to, follow_path, velocity_servo
     flight_core_node = Node(
-        package='flight_core',
-        executable='flight_core_node',
+        package='flight_core_v2',
+        executable='flight_core_v2_node',
         output='screen',
         parameters=[{'use_sim_time': True}]
     )

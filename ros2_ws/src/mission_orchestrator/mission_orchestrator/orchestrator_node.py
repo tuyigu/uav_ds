@@ -72,6 +72,11 @@ class OrchestratorNode(Node):
         # Last published intent (avoid spamming same intent)
         self._last_intent = ""
         self._last_reason = ""
+        # Heartbeat: republish current intent periodically even if unchanged
+        # so BT's IsLinkAlive condition stays alive.
+        # At loop_rate=2Hz, _intent_heartbeat_every=6 → republish every 3s
+        self._intent_tick = 0
+        self._intent_heartbeat_every = max(1, int(loop_rate * 3))
 
         # ── Subscribers ───────────────────────────────────────────
 
@@ -285,8 +290,14 @@ class OrchestratorNode(Node):
         if self.mission.pending_command:
             self.mission.pending_command = ""
 
-        # Publish intent (only if changed, to avoid spamming BT)
-        if intent != self._last_intent or reason != self._last_reason:
+        # Publish intent:
+        # - immediately on change (responsive)
+        # - periodically as heartbeat (keeps BT IsLinkAlive alive)
+        self._intent_tick += 1
+        intent_changed = (intent != self._last_intent or reason != self._last_reason)
+        heartbeat_due  = (self._intent_tick % self._intent_heartbeat_every == 0)
+
+        if intent_changed or heartbeat_due:
             self._publish_intent(intent, reason)
 
         # Handle terminal intents

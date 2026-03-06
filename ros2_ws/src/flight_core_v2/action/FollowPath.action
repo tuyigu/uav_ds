@@ -1,0 +1,18 @@
+# Goal
+geometry_msgs/Point[] waypoints   # A* waypoints in ENU (m)
+float32 v_max         # max speed m/s        (default 1.5)
+float32 a_max         # max accel m/s²       (default 1.0)
+float32 j_max         # max jerk  m/s³       (default 2.0)
+float32 arrival_radius # waypoint accept r m (default 0.3)
+---
+# Result
+bool    success
+geometry_msgs/Point final_position
+string  message
+---
+# Feedback
+uint32  current_waypoint_index
+float32 distance_remaining
+float32 current_x
+float32 current_y
+float32 current_z

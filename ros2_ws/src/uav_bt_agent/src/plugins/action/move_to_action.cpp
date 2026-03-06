@@ -8,7 +8,7 @@ MoveToAction::MoveToAction(const std::string& name,
                            const rclcpp::Node::SharedPtr& node)
   : BT::StatefulActionNode(name, config), node_(node)
 {
-  action_client_ = rclcpp_action::create_client<MoveTo>(node_, "flight/move_to");
+  action_client_ = rclcpp_action::create_client<MoveTo>(node_, "motion/move_to");
 }
 
 BT::PortsList MoveToAction::providedPorts()

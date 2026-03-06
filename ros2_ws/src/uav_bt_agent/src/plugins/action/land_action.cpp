@@ -8,7 +8,7 @@ LandAction::LandAction(const std::string& name,
                        const rclcpp::Node::SharedPtr& node)
   : BT::StatefulActionNode(name, config), node_(node)
 {
-  action_client_ = rclcpp_action::create_client<Land>(node_, "flight/land");
+  action_client_ = rclcpp_action::create_client<Land>(node_, "motion/land");
 }
 
 BT::PortsList LandAction::providedPorts()

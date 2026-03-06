@@ -17,8 +17,8 @@ PrecisionLandAction::PrecisionLandAction(const std::string& name, const BT::Node
         "/flight/uav_state", 10,
         std::bind(&PrecisionLandAction::uavStateCallback, this, std::placeholders::_1));
         
-    move_client_ = rclcpp_action::create_client<MoveTo>(node_, "flight/move_to");
-    land_client_ = rclcpp_action::create_client<Land>(node_, "flight/land");
+    move_client_ = rclcpp_action::create_client<MoveTo>(node_, "motion/move_to");
+    land_client_ = rclcpp_action::create_client<Land>(node_, "motion/land");
 }
 
 BT::PortsList PrecisionLandAction::providedPorts()

@@ -11,6 +11,7 @@ find_package(rclcpp_action REQUIRED)
 find_package(behaviortree_cpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(flight_core REQUIRED)
+find_package(flight_core_v2 REQUIRED)
 find_package(uav_navigation REQUIRED)
 find_package(uav_web_agent REQUIRED)
 
@@ -25,6 +26,7 @@ add_library(bt_plugins SHARED
   src/plugins/action/follow_path_action.cpp
   src/plugins/action/search_marker_action.cpp
   src/plugins/action/precision_land_action.cpp
+  src/plugins/action/approach_action.cpp
   # Condition nodes...
 )
 ament_target_dependencies(bt_plugins
@@ -33,6 +35,7 @@ ament_target_dependencies(bt_plugins
   behaviortree_cpp
   geometry_msgs
   flight_core
+  flight_core_v2
   uav_navigation
 )
 

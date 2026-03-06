@@ -8,7 +8,7 @@ TakeoffAction::TakeoffAction(const std::string& name,
                              const rclcpp::Node::SharedPtr& node)
   : BT::StatefulActionNode(name, config), node_(node)
 {
-  action_client_ = rclcpp_action::create_client<Takeoff>(node_, "flight/takeoff");
+  action_client_ = rclcpp_action::create_client<Takeoff>(node_, "motion/takeoff");
 }
 
 BT::PortsList TakeoffAction::providedPorts()
